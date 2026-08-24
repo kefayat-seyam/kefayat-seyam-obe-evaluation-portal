@@ -37,7 +37,9 @@
 window.Store = (function () {
   'use strict';
 
-  var STORAGE_KEY = 'obe.data.v1';
+  var STORAGE_KEY = 'obe.data.v2';   // bump this whenever seed-data changes,
+                                     // so old cached data in the browser is
+                                     // dropped and the new seed loads.
   var db = null;   // the in-memory copy; localStorage is the backup
 
   /* ---------------- low level load / save ---------------- */

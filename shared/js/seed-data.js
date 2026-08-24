@@ -75,51 +75,139 @@ window.OBE_SEED = {
   ],
 
   /* ---------------------------------------------------------------
-     USERS — PLACEHOLDER people, so the three logins can be demoed.
-     Passwords are stored in plain text on purpose: this project has
-     no backend, so there is nothing real to protect. Replace this
-     list from the Faculty Info / Students Info screens (Visit 3).
+     USERS — the three logins the app is demoed with.
+
+     The teachers are the REAL ECE faculty list from
+     https://www.ece.ruet.ac.bd/teacher — names, designations and who is
+     currently on leave. Their email addresses and passwords are NOT
+     real: they are built from each teacher's profile name on that site
+     purely so every account has something to sign in with. Replace them
+     with real addresses if this is ever used for anything.
+
+     The students are invented.
+
+     Passwords are stored in plain text on purpose: this project has no
+     backend, so there is nothing real to protect.
 
      role: 'admin' | 'faculty' | 'student'
+     onLeave marks the teachers the department site shows as on leave;
+     they hold no courses this session.
      --------------------------------------------------------------- */
   users: [
     /* --- Admin = Department Head (one per department) --- */
     {
       id: 'u-admin', role: 'admin', departmentId: 'dept-ece',
-      name: 'Dr. A. K. M. Rahman', email: 'head.ece@ruet.ac.bd', password: 'admin123',
+      name: 'Prof. Dr. Md. Anwar Hossain', email: 'head.ece@ruet.ac.bd', password: 'admin123',
       designation: 'Professor & Head of the Department'
     },
 
-    /* --- Faculty --- */
+    /* --- Faculty: Assistant Professors --- */
     {
       id: 'u-fac-1', role: 'faculty', departmentId: 'dept-ece',
-      name: 'Dr. Nusrat Jahan', email: 'nusrat@ruet.ac.bd', password: 'faculty123',
-      designation: 'Associate Professor',
-      courseCodes: ['ECE 1103', 'ECE 1104', 'ECE 3117']
+      name: 'Fariya Tabassum', email: 'fariya@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor',
+      courseCodes: ['ECE 1101', 'ECE 1102']
     },
     {
       id: 'u-fac-2', role: 'faculty', departmentId: 'dept-ece',
-      name: 'Md. Rakibul Hasan', email: 'rakibul@ruet.ac.bd', password: 'faculty123',
+      name: 'Md. Abu Hanif Pramanik', email: 'abuhanif@ece.ruet.ac.bd', password: 'faculty123',
       designation: 'Assistant Professor',
-      courseCodes: ['ECE 1101', 'ECE 1102', 'ECE 2105']
+      courseCodes: ['ECE 1103', 'ECE 1104']
     },
     {
       id: 'u-fac-3', role: 'faculty', departmentId: 'dept-ece',
-      name: 'Sabrina Islam', email: 'sabrina@ruet.ac.bd', password: 'faculty123',
-      designation: 'Lecturer',
-      courseCodes: ['ECE 3111', 'ECE 3112']
+      name: 'Hafsa Binte Kibria', email: 'hafsa@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor',
+      courseCodes: ['ECE 2215', 'ECE 2216']
     },
     {
       id: 'u-fac-4', role: 'faculty', departmentId: 'dept-ece',
-      name: 'Dr. Tanvir Ahmed', email: 'tanvir@ruet.ac.bd', password: 'faculty123',
-      designation: 'Professor',
-      courseCodes: ['ECE 4127', 'ECE 4128', 'ECE 3205']
+      name: 'Md. Omaer Faruq Goni', email: 'omaerfaruq@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor',
+      courseCodes: ['ECE 3117', 'ECE 3118']
     },
     {
       id: 'u-fac-5', role: 'faculty', departmentId: 'dept-ece',
-      name: 'Farhana Akter', email: 'farhana@ruet.ac.bd', password: 'faculty123',
+      name: 'Oishi Jyoti', email: 'oishi@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor',
+      courseCodes: ['ECE 3111', 'ECE 3112']
+    },
+    {
+      id: 'u-fac-6', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Md. Faysal Ahamed', email: 'faysal@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor',
+      courseCodes: ['ECE 4127', 'ECE 4128']
+    },
+    {
+      id: 'u-fac-7', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Moloy Kumar Ghosh', email: 'moloy@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor',
+      courseCodes: ['ECE 3205', 'ECE 3206']
+    },
+    {
+      id: 'u-fac-8', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Md. Habibur Rahaman', email: 'habib@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-9', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Tasnim Binte Shawkat', email: 'tasnim@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-10', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Abdul Matin', email: 'abdulmatin@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-11', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Sagor Chandro Bakchy', email: 'sagorchandro@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-12', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Md. Mahabubur Rahman', email: 'mahabubur@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-13', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Milton Kumar Kundu', email: 'milton@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-14', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Md. Robiul Islam', email: 'robiul@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-15', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Rakibul Hassan', email: 'rakibulhassan@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+    {
+      id: 'u-fac-16', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Md. Nahiduzzaman', email: 'nahiduzzaman@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Assistant Professor', onLeave: true
+    },
+
+    /* --- Faculty: Lecturers --- */
+    {
+      id: 'u-fac-17', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Nadim Reza', email: 'nadim@ece.ruet.ac.bd', password: 'faculty123',
       designation: 'Lecturer',
-      courseCodes: ['ECE 2215', 'ECE 2216']
+      courseCodes: ['ECE 2105']
+    },
+    {
+      id: 'u-fac-18', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Mst. Mazeda Noor Tasnim', email: 'mazeda@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Lecturer',
+      courseCodes: ['ECE 1100']
+    },
+    {
+      id: 'u-fac-19', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Mst. Nafia Islam Shishir', email: 'nafia@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Lecturer',
+      courseCodes: ['ECE 2100']
     },
 
     /* --- Students (read-only role). A student is enrolled in every
@@ -284,12 +372,12 @@ window.OBE_SEED = {
     {
       title: 'ECE 1103: extra problem-solving class',
       message: 'An extra problem-solving class on pointers and file handling will be held this Saturday. Attendance is optional but strongly recommended before the second class test.',
-      level: 'course', courseCode: 'ECE 1103', date: '2026-08-20', author: 'Dr. Nusrat Jahan'
+      level: 'course', courseCode: 'ECE 1103', date: '2026-08-20', author: 'Md. Abu Hanif Pramanik'
     },
     {
       title: 'ECE 3111: assignment on interfacing submission date',
       message: 'The assignment on 8086 peripheral interfacing must be submitted as a hard copy in the next class. Late submission will lose 20% of the marks.',
-      level: 'course', courseCode: 'ECE 3111', date: '2026-08-19', author: 'Sabrina Islam'
+      level: 'course', courseCode: 'ECE 3111', date: '2026-08-19', author: 'Oishi Jyoti'
     }
   ]
 };

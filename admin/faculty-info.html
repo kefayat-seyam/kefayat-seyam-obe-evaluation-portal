@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Faculty Info</title>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
 <link rel="stylesheet" href="../shared/css/theme.css">
 <link rel="stylesheet" href="../shared/css/ui.css">
 </head>
@@ -57,7 +58,7 @@
 
       <p class="small muted mt-2">
         Faculty user model: <code class="mono">{ id, role:'faculty', name, email, password,
-        designation, departmentId }</code>. The link to a course is
+        designation, departmentId, onLeave }</code>. The link to a course is
         <code class="mono">Course.facultyId</code>.
       </p>
 
@@ -80,7 +81,9 @@
   Shell.mount({ role: 'admin', active: 'faculty', title: 'Faculty Info' });
 
   var list = Store.facultyList();
-  UI.el('countLine').textContent = UI.plural(list.length, 'teacher');
+  var onLeave = list.filter(function (f) { return f.onLeave; });
+  UI.el('countLine').textContent = UI.plural(list.length, 'teacher') +
+    (onLeave.length ? ' · ' + onLeave.length + ' on leave' : '');
 
   UI.el('rows').innerHTML = list.map(function (f) {
     var courses = Store.coursesOfFaculty(f.id);
@@ -90,10 +93,15 @@
                  UI.esc(c.code) + '</span>';
         }).join(' ')
       : '<span class="muted small">none yet</span>';
+    /* Teachers listed as "On Leave" on the department website keep their
+       account but hold no course this session. */
+    var leaveTag = f.onLeave
+      ? ' <span class="badge tone-amber">On leave</span>'
+      : '';
     return '<tr>' +
       '<td><div class="row"><div class="avatar">' + UI.esc(UI.initials(f.name)) + '</div>' +
         '<span>' + UI.esc(f.name) + '</span></div></td>' +
-      '<td class="soft">' + UI.esc(f.designation || '—') + '</td>' +
+      '<td class="soft">' + UI.esc(f.designation || '—') + leaveTag + '</td>' +
       '<td class="small mono">' + UI.esc(f.email) + '</td>' +
       '<td><div class="row-wrap" style="gap:5px">' + chips + '</div></td>' +
     '</tr>';

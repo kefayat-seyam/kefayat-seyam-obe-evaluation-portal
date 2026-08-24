@@ -25,7 +25,7 @@ then open <http://localhost:8000>.
 | Role    | Email                        | Password     |
 |---------|------------------------------|--------------|
 | Admin   | `head.ece@ruet.ac.bd`        | `admin123`   |
-| Faculty | `nusrat@ruet.ac.bd`          | `faculty123` |
+| Faculty | `fariya@ece.ruet.ac.bd`      | `faculty123` |
 | Student | `sadikin@student.ruet.ac.bd` | `student123` |
 
 The login page has a role picker; picking the wrong role for an account is

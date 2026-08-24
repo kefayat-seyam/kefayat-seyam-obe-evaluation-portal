@@ -115,7 +115,7 @@ window.Shell = (function () {
 
     UI.el('sidebar').innerHTML =
       '<div class="brand">' +
-        '<div class="brand-mark">' + UI.esc(dept.shortName) + '</div>' +
+        '<img class="brand-logo" src="../shared/img/ruet-logo.png" alt="RUET">' +
         '<div>' +
           '<div class="brand-name">OBE Curriculum</div>' +
           '<div class="brand-sub">' + UI.esc(dept.shortName) + ' · ' + UI.esc(roleInfo.label) + '</div>' +

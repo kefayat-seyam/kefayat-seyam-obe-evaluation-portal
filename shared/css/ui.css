@@ -52,6 +52,19 @@
   font-weight: 700; font-size: 13px;
   flex: 0 0 auto;
 }
+/* The RUET crest. The artwork has dark text in it, so it sits on a white
+   chip: that keeps it readable on the dark theme and on the coloured
+   login panel, and looks deliberate on the light theme too. */
+.brand-logo {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  background: #fff;
+  padding: 3px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.brand-logo.lg { width: 48px; height: 48px; border-radius: 12px; padding: 5px; }
+
 .brand-name { font-weight: 700; font-size: 15px; letter-spacing: .2px; }
 .brand-sub { font-size: 11px; color: var(--text-muted); margin-top: -3px; }
 

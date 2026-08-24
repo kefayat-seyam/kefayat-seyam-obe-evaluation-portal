@@ -281,7 +281,7 @@ check('reset() drops the harness test course', Store.courseByCode('TEST 9999') =
 /* --- persistence --- */
 group('B. Persistence (localStorage)');
 
-check('data is written under obe.data.v1',
+check('data is written under Store.storageKey',
   typeof env.storage.getItem(Store.storageKey) === 'string');
 check('what is stored is valid JSON with a courses array', (() => {
   try {
@@ -306,7 +306,7 @@ check('the second load did not duplicate the seed',
 
 /* Corrupt storage must fall back to a fresh seed rather than a blank page. */
 const badStorage = makeStorage();
-badStorage.setItem('obe.data.v1', '{not json at all');
+badStorage.setItem(Store.storageKey, '{not json at all');
 const env3 = makeEnv({ storage: badStorage });
 env3.loadShared();
 check('corrupt saved data re-seeds instead of crashing',
