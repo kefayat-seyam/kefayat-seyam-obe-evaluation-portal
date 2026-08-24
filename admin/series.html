@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Series / Semester</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Series / Semester</h1>
+          <div class="sub">A series is an admission batch; it moves through the eight semesters.</div>
+        </div>
+        <span class="ro-note">Editing arrives in Visit 3</span>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body">
+          <b>Planned for Visit 3 (Group 1, Member 2)</b>
+          <p class="soft mt-1 mb-1">Create a new series each session, promote a series to
+          the next semester, and close a series once it graduates. The eight semesters
+          themselves are fixed by the syllabus and are defined in
+          <code class="mono">shared/js/seed-data.js</code>.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="card-head"><h2>Series</h2><span class="small muted" id="seriesCount"></span></div>
+          <div class="card-body tight" id="seriesRows"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Semesters</h2><span class="small muted">fixed structure</span></div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th style="width:64px">Id</th>
+                  <th>Label</th>
+                  <th style="width:84px" class="right">Courses</th>
+                  <th style="width:84px" class="right">Credits</th>
+                </tr>
+              </thead>
+              <tbody id="semRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        Series model: <code class="mono">{ id, name, departmentId, startYear, currentSemester }</code>.
+        Semester model: <code class="mono">{ id, label, year, term }</code> — the id
+        (<code class="mono">"3-1"</code>) is what <code class="mono">Course.semester</code> stores.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+  var me = Auth.requireRole('admin');
+  if (!me) return;
+  Shell.mount({ role: 'admin', active: 'series', title: 'Series / Semester' });
+
+  var series = Store.all('series');
+  UI.el('seriesCount').textContent = UI.plural(series.length, 'series', 'series');
+
+  UI.el('seriesRows').innerHTML = series.map(function (s) {
+    var students = Store.where('users', function (u) { return u.seriesId === s.id; });
+    return '<div class="list-row">' +
+      '<div style="flex:1">' +
+        '<div class="list-title">' + UI.esc(s.name) + '</div>' +
+        '<div class="list-sub">Now in ' + UI.esc(Store.semesterLabel(s.currentSemester)) +
+          ' · ' + UI.plural(students.length, 'student') + '</div>' +
+      '</div>' +
+      '<span class="badge tone-blue">' + UI.esc(s.currentSemester) + '</span>' +
+    '</div>';
+  }).join('');
+
+  UI.el('semRows').innerHTML = Store.semesters().map(function (s) {
+    var list = Store.coursesOfSemester(s.id);
+    var credits = list.reduce(function (sum, c) { return sum + (c.credits || 0); }, 0);
+    return '<tr>' +
+      '<td class="tbl-code">' + UI.esc(s.id) + '</td>' +
+      '<td><a href="courses.html?semester=' + s.id + '">' + UI.esc(s.label) + '</a></td>' +
+      '<td class="right">' + list.length + '</td>' +
+      '<td class="right">' + (Math.round(credits * 100) / 100).toFixed(2) + '</td>' +
+    '</tr>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

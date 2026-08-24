@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Students Info</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Students Info</h1>
+          <div class="sub">Students are grouped under a series, and a series sits in a semester.</div>
+        </div>
+        <span class="ro-note">Editing arrives in Visit 3</span>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body">
+          <b>Planned for Visit 3 (Group 1, Member 2)</b>
+          <p class="soft mt-1 mb-1">Enrol and remove students, bulk-import a roll list,
+          move a series to the next semester, and print section-wise lists. For now the
+          four demo students come from <code class="mono">shared/js/seed-data.js</code>.</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Enrolled students</h2>
+          <span class="small muted" id="countLine"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:104px">Roll</th>
+                <th style="width:200px">Name</th>
+                <th style="width:180px">Series</th>
+                <th style="width:150px">Semester</th>
+                <th style="width:64px" class="center">Sec</th>
+                <th>Email</th>
+                <th style="width:110px" class="right">Courses</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        Student user model: <code class="mono">{ id, role:'student', name, email, password,
+        roll, seriesId, semester, section, departmentId }</code>. A student is enrolled in
+        every non-optional course of their semester.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+  var me = Auth.requireRole('admin');
+  if (!me) return;
+  Shell.mount({ role: 'admin', active: 'students', title: 'Students Info' });
+
+  var list = Store.studentList().sort(function (a, b) {
+    return String(a.roll) < String(b.roll) ? -1 : 1;
+  });
+  UI.el('countLine').textContent = UI.plural(list.length, 'student');
+
+  UI.el('rows').innerHTML = list.map(function (s) {
+    var series = Store.get('series', s.seriesId);
+    return '<tr>' +
+      '<td class="tbl-code">' + UI.esc(s.roll || '—') + '</td>' +
+      '<td>' + UI.esc(s.name) + '</td>' +
+      '<td class="soft">' + UI.esc(series ? series.name : '—') + '</td>' +
+      '<td>' + UI.esc(Store.semesterLabel(s.semester)) + '</td>' +
+      '<td class="center">' + UI.esc(s.section || '—') + '</td>' +
+      '<td class="small mono">' + UI.esc(s.email) + '</td>' +
+      '<td class="right">' + Store.coursesOfStudent(s).length + '</td>' +
+    '</tr>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

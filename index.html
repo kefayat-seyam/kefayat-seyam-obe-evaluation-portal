@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · OBE Curriculum Management</title>
+
+<!-- Apply the saved theme before anything is painted, so the page never
+     flashes the wrong colours. Same line sits in every page's <head>. -->
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+
+<link rel="stylesheet" href="shared/css/theme.css">
+<link rel="stylesheet" href="shared/css/ui.css">
+</head>
+<body>
+
+<div class="login-wrap">
+
+  <!-- ---------------- left: pitch panel ---------------- -->
+  <section class="login-art">
+    <div>
+      <div class="row" style="gap:11px">
+        <div class="brand-mark" style="background:rgba(255,255,255,.18)">ECE</div>
+        <div>
+          <div style="font-weight:700">OBE Curriculum Management</div>
+          <div class="small" style="opacity:.8">Department of Electrical &amp; Computer Engineering</div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <h2>Outcome Based Education, from syllabus to attainment.</h2>
+      <p class="pitch">One place for course outcomes, program outcomes and the
+        mapping between them — built for the ECE department at RUET.</p>
+      <ul>
+        <li><span class="tick">✓</span><span><b>Admin</b> defines courses and the CO/PO framework</span></li>
+        <li><span class="tick">✓</span><span><b>Faculty</b> edit curriculum and map CO to PO</span></li>
+        <li><span class="tick">✓</span><span><b>Students</b> read syllabus, notices and attainment</span></li>
+      </ul>
+    </div>
+
+    <div class="small" style="opacity:.72">
+      Course data loaded from the ECE undergraduate syllabus, session 2020-2021.
+    </div>
+  </section>
+
+  <!-- ---------------- right: the form ---------------- -->
+  <section class="login-form-side">
+    <div class="login-box">
+
+      <div class="row mb-2">
+        <div class="spacer"></div>
+        <button class="icon-btn" data-theme-toggle title="Switch theme">☾</button>
+      </div>
+
+      <h1>Sign in</h1>
+      <p class="muted" id="introLine">Choose your role, then sign in with your department account.</p>
+
+      <!-- already signed in? -->
+      <div class="card mb-2 hidden" id="resumeBox">
+        <div class="card-body row" style="gap:12px">
+          <div class="avatar" id="resumeAvatar">?</div>
+          <div style="flex:1">
+            <div style="font-weight:600" id="resumeName">—</div>
+            <div class="small muted" id="resumeRole">—</div>
+          </div>
+          <button class="btn btn-primary btn-sm" id="resumeBtn">Continue</button>
+        </div>
+      </div>
+
+      <form id="loginForm" autocomplete="off">
+        <!-- role picker: fills in the demo account for that role -->
+        <div class="role-pick" id="rolePick"></div>
+
+        <div class="field">
+          <label for="email">Email address</label>
+          <input class="input" type="email" id="email" placeholder="you@ruet.ac.bd" required>
+        </div>
+
+        <div class="field">
+          <label for="password">Password</label>
+          <input class="input" type="password" id="password" placeholder="••••••••" required>
+        </div>
+
+        <div class="error-text" id="loginError"></div>
+
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      </form>
+
+      <div class="demo-box" id="demoBox"></div>
+
+      <p class="small muted mt-2">
+        Frontend-only project — accounts and passwords live in
+        <code class="mono">shared/js/seed-data.js</code> and all data is kept in this
+        browser's localStorage.
+      </p>
+    </div>
+  </section>
+</div>
+
+<!-- ---------------- scripts ----------------
+     Plain <script> tags (not modules) so the app also works when the
+     files are opened straight from disk with file://          -->
+<script src="shared/js/seed-courses.js"></script>
+<script src="shared/js/seed-data.js"></script>
+<script src="shared/js/store.js"></script>
+<script src="shared/js/ui.js"></script>
+<script src="shared/js/theme.js"></script>
+<script src="shared/js/auth.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  Theme.init();
+
+  var ROLES = ['admin', 'faculty', 'student'];
+  var chosenRole = 'admin';
+
+  /* Demo accounts: the first seeded user of each role. Shown on the page
+     so nobody has to dig through seed-data.js during a demo. */
+  function demoUser(role) {
+    return Store.where('users', function (u) { return u.role === role; })[0] || null;
+  }
+
+  /* ---- role picker ---- */
+  function drawRoles() {
+    UI.el('rolePick').innerHTML = ROLES.map(function (role) {
+      var info = Auth.ROLES[role];
+      return '<button type="button" class="role-opt' + (role === chosenRole ? ' is-on' : '') +
+             '" data-role="' + role + '">' +
+               '<span class="ico">' + info.icon + '</span>' +
+               '<span class="nm">' + UI.esc(info.label) + '</span>' +
+             '</button>';
+    }).join('');
+
+    UI.qsa('#rolePick .role-opt').forEach(function (btn) {
+      btn.onclick = function () {
+        chosenRole = btn.getAttribute('data-role');
+        drawRoles();
+        fillDemo();
+        drawDemoBox();
+      };
+    });
+  }
+
+  /* Pre-fill the demo credentials for the chosen role. Delete this
+     function (and its two calls) if you want an empty form. */
+  function fillDemo() {
+    var user = demoUser(chosenRole);
+    UI.el('email').value = user ? user.email : '';
+    UI.el('password').value = user ? user.password : '';
+    UI.el('loginError').textContent = '';
+  }
+
+  function drawDemoBox() {
+    var rows = ROLES.map(function (role) {
+      var user = demoUser(role);
+      if (!user) return '';
+      return '<div class="row" style="gap:6px">' +
+               '<b style="width:62px">' + UI.esc(Auth.ROLES[role].label) + '</b>' +
+               '<code>' + UI.esc(user.email) + '</code>' +
+               '<span class="muted">/</span><code>' + UI.esc(user.password) + '</code>' +
+             '</div>';
+    }).join('');
+    UI.el('demoBox').innerHTML =
+      '<div class="small muted mb-1">Demo accounts (placeholder data)</div>' + rows;
+  }
+
+  /* ---- already-signed-in banner ---- */
+  function drawResume() {
+    var user = Auth.current();
+    if (!user) return;
+    UI.el('resumeBox').classList.remove('hidden');
+    UI.el('resumeAvatar').textContent = UI.initials(user.name);
+    UI.el('resumeName').textContent = user.name;
+    UI.el('resumeRole').textContent = 'Signed in as ' + Auth.ROLES[user.role].label +
+                                      ' · ' + user.email;
+    UI.el('resumeBtn').onclick = function () {
+      window.location.href = Auth.dashboardPath(user.role);
+    };
+  }
+
+  /* ---- submit: this is the role-based routing ---- */
+  UI.el('loginForm').onsubmit = function (ev) {
+    ev.preventDefault();
+    var result = Auth.login(UI.el('email').value, UI.el('password').value, chosenRole);
+    if (!result.ok) {
+      UI.el('loginError').textContent = result.error;
+      return;
+    }
+    // Each role has its own folder and its own landing page.
+    window.location.href = Auth.dashboardPath(result.user.role);
+  };
+
+  /* ---- a message passed back by the page guard ---- */
+  if (/msg=login-first/.test(window.location.search)) {
+    UI.el('introLine').textContent = 'Please sign in first to open that page.';
+  }
+
+  drawRoles();
+  fillDemo();
+  drawDemoBox();
+  drawResume();
+})();
+</script>
+</body>
+</html>

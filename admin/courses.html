@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Course Management</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Course Management</h1>
+          <div class="sub">Every course offered by the department. Admin only.</div>
+        </div>
+        <div class="row-wrap">
+          <button class="btn" id="btnExport">Copy as JSON</button>
+          <button class="btn btn-primary" id="btnAdd">+ New course</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="row-wrap" style="flex:1">
+            <div class="search">
+              <input class="input" id="q" placeholder="Search code or title…">
+            </div>
+            <select class="select" id="fSemester" style="flex:0 1 190px"></select>
+            <select class="select" id="fType" style="flex:0 1 150px">
+              <option value="">Theory + sessional</option>
+              <option value="theory">Theory only</option>
+              <option value="sessional">Sessional only</option>
+            </select>
+            <select class="select" id="fTeacher" style="flex:0 1 175px">
+              <option value="">Any teacher</option>
+              <option value="none">Not assigned</option>
+              <option value="some">Assigned</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btnClear">Clear</button>
+          </div>
+          <span class="small muted" id="countLine"></span>
+        </div>
+
+        <div class="table-wrap" style="max-height:66vh;overflow-y:auto">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:104px">Code</th>
+                <th>Course title</th>
+                <th style="width:132px">Semester</th>
+                <th style="width:72px" class="right">Credits</th>
+                <th style="width:104px">Type</th>
+                <th style="width:170px">Teacher</th>
+                <th style="width:112px"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        Course data model: <code class="mono">{ id, code, name, semester, departmentId,
+        credits, type, optional, facultyId }</code>. Deleting a course also deletes its
+        curriculum, course outcomes, CO-PO mappings and course notices.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('admin');
+  if (!me) return;
+
+  Shell.mount({ role: 'admin', active: 'courses', title: 'Course Management' });
+
+  var dept = Store.department();
+  var semesters = Store.semesters();
+
+  /* ---------------- filters ---------------- */
+
+  // The dashboard links here as courses.html?semester=3-1
+  var fromUrl = /semester=([\d-]+)/.exec(window.location.search);
+
+  UI.el('fSemester').innerHTML = '<option value="">All 8 semesters</option>' +
+    semesters.map(function (s) {
+      return '<option value="' + s.id + '">' + UI.esc(s.label) + '</option>';
+    }).join('');
+  if (fromUrl) UI.el('fSemester').value = fromUrl[1];
+
+  ['q', 'fSemester', 'fType', 'fTeacher'].forEach(function (id) {
+    UI.el(id).oninput = draw;
+    UI.el(id).onchange = draw;
+  });
+  UI.el('btnClear').onclick = function () {
+    UI.el('q').value = '';
+    UI.el('fSemester').value = '';
+    UI.el('fType').value = '';
+    UI.el('fTeacher').value = '';
+    draw();
+  };
+
+  function visibleCourses() {
+    var q = UI.el('q').value.trim().toLowerCase();
+    var sem = UI.el('fSemester').value;
+    var type = UI.el('fType').value;
+    var teacher = UI.el('fTeacher').value;
+
+    return Store.all('courses').filter(function (c) {
+      if (sem && c.semester !== sem) return false;
+      if (type && c.type !== type) return false;
+      if (teacher === 'none' && c.facultyId) return false;
+      if (teacher === 'some' && !c.facultyId) return false;
+      if (q && (c.code + ' ' + c.name).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) {
+      if (a.semester !== b.semester) return a.semester < b.semester ? -1 : 1;
+      return a.code < b.code ? -1 : 1;
+    });
+  }
+
+  /* ---------------- the table ---------------- */
+
+  function teacherName(facultyId) {
+    if (!facultyId) return '<span class="muted">Not assigned</span>';
+    var user = Store.get('users', facultyId);
+    return user ? UI.esc(user.name) : '<span class="muted">Unknown</span>';
+  }
+
+  function draw() {
+    var list = visibleCourses();
+    var total = Store.all('courses').length;
+
+    UI.el('countLine').textContent = list.length === total
+      ? UI.plural(total, 'course')
+      : 'Showing ' + list.length + ' of ' + total + ' courses';
+
+    if (!list.length) {
+      UI.el('rows').innerHTML =
+        '<tr><td colspan="7">' +
+          UI.emptyState('📚', 'No course matches these filters.',
+                        'Clear the filters, or add a new course.') +
+        '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = list.map(function (c) {
+      var coCount = Store.outcomesOf(c.id).length;
+      return '<tr>' +
+        '<td class="tbl-code">' + UI.esc(c.code) + '</td>' +
+        '<td>' + UI.esc(c.name) +
+          (c.optional ? ' <span class="badge tone-amber">optional</span>' : '') +
+          (coCount ? ' <span class="badge tone-blue">' + coCount + ' CO</span>' : '') +
+        '</td>' +
+        '<td class="nowrap">' + UI.esc(Store.semesterLabel(c.semester)) + '</td>' +
+        '<td class="right">' + (c.credits != null ? c.credits.toFixed(2) : '—') + '</td>' +
+        '<td><span class="badge tone-' + (c.type === 'theory' ? 'cyan' : 'grey') + '">' +
+          UI.esc(c.type) + '</span></td>' +
+        '<td>' + teacherName(c.facultyId) + '</td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-edit="' + c.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + c.id + '" title="Delete">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-edit]').forEach(function (btn) {
+      btn.onclick = function () { openForm(btn.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (btn) {
+      btn.onclick = function () { askDelete(btn.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- create / edit form ---------------- */
+
+  function openForm(courseId) {
+    var course = courseId ? Store.get('courses', courseId) : null;
+    var isNew = !course;
+    if (isNew) {
+      course = {
+        code: '', name: '', semester: UI.el('fSemester').value || '1-1',
+        credits: 3, type: 'theory', optional: false, facultyId: ''
+      };
+    }
+
+    var semesterOptions = semesters.map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === course.semester ? ' selected' : '') +
+             '>' + UI.esc(s.label) + '</option>';
+    }).join('');
+
+    var teacherOptions = '<option value="">Not assigned</option>' +
+      Store.facultyList().map(function (f) {
+        return '<option value="' + f.id + '"' + (f.id === course.facultyId ? ' selected' : '') +
+               '>' + UI.esc(f.name) + '</option>';
+      }).join('');
+
+    UI.modal({
+      title: isNew ? 'New course' : 'Edit ' + course.code,
+      okText: isNew ? 'Create course' : 'Save changes',
+      body:
+        '<div class="field-row">' +
+          '<div class="field" style="flex:0 1 150px">' +
+            '<label for="fCode">Course code</label>' +
+            '<input class="input mono" id="fCode" placeholder="ECE 1101" value="' +
+              UI.esc(course.code) + '">' +
+          '</div>' +
+          '<div class="field" style="flex:2 1 240px">' +
+            '<label for="fName">Course title</label>' +
+            '<input class="input" id="fName" placeholder="Circuits &amp; Systems-I" value="' +
+              UI.esc(course.name) + '">' +
+          '</div>' +
+        '</div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="fSem">Semester</label>' +
+            '<select class="select" id="fSem">' + semesterOptions + '</select></div>' +
+          '<div class="field" style="flex:0 1 110px"><label for="fCredits">Credits</label>' +
+            '<input class="input" id="fCredits" type="number" step="0.25" min="0" max="12" value="' +
+              course.credits + '"></div>' +
+          '<div class="field" style="flex:0 1 140px"><label for="fKind">Type</label>' +
+            '<select class="select" id="fKind">' +
+              '<option value="theory"' + (course.type === 'theory' ? ' selected' : '') + '>Theory</option>' +
+              '<option value="sessional"' + (course.type === 'sessional' ? ' selected' : '') + '>Sessional</option>' +
+            '</select></div>' +
+        '</div>' +
+        '<div class="field"><label for="fFac">Assigned teacher</label>' +
+          '<select class="select" id="fFac">' + teacherOptions + '</select>' +
+          '<div class="hint">Faculty can only edit the courses assigned to them.</div>' +
+        '</div>' +
+        '<div class="field"><label class="row" style="gap:8px;font-weight:500">' +
+          '<input type="checkbox" id="fOpt"' + (course.optional ? ' checked' : '') + '>' +
+          '<span>Optional / elective course</span></label>' +
+        '</div>' +
+        '<div class="error-text" id="fErr"></div>',
+
+      onOk: function () {
+        var code = UI.el('fCode').value.trim().replace(/\s+/g, ' ');
+        var name = UI.el('fName').value.trim();
+        var semester = UI.el('fSem').value;
+        var credits = parseFloat(UI.el('fCredits').value);
+        var err = UI.el('fErr');
+
+        if (!code) { err.textContent = 'A course code is required.'; return false; }
+        if (!name) { err.textContent = 'A course title is required.'; return false; }
+        if (isNaN(credits) || credits < 0) {
+          err.textContent = 'Credits must be a number, for example 3 or 1.5.';
+          return false;
+        }
+        // The same code may repeat in another semester (e.g. ECE 4000
+        // Thesis/Project I and II) but not twice in one semester.
+        var clash = Store.where('courses', function (c) {
+          return c.code.toLowerCase() === code.toLowerCase() &&
+                 c.semester === semester && c.id !== course.id;
+        })[0];
+        if (clash) {
+          err.textContent = code + ' already exists in ' + Store.semesterLabel(semester) + '.';
+          return false;
+        }
+
+        var record = {
+          code: code,
+          name: name,
+          semester: semester,
+          departmentId: dept.id,
+          credits: credits,
+          type: UI.el('fKind').value,
+          optional: UI.el('fOpt').checked,
+          facultyId: UI.el('fFac').value || null
+        };
+
+        if (isNew) {
+          var created = Store.add('courses', record);
+          // Every course gets an (empty) curriculum row so the faculty
+          // editor always has something to open.
+          Store.add('curriculums', {
+            courseId: created.id, topics: [],
+            updatedAt: new Date().toISOString(), updatedBy: me.name
+          });
+          UI.toast(created.code + ' created');
+        } else {
+          Store.update('courses', course.id, record);
+          UI.toast(code + ' saved');
+        }
+        draw();
+      }
+    });
+  }
+
+  /* ---------------- delete (with its dependent records) ---------------- */
+
+  function askDelete(courseId) {
+    var course = Store.get('courses', courseId);
+    if (!course) return;
+
+    // Store decides what a delete takes with it; we only describe it.
+    var dep = Store.dependentsOfCourse(courseId);
+
+    var extras = [];
+    if (dep.outcomes.length) extras.push(UI.plural(dep.outcomes.length, 'course outcome'));
+    if (dep.mappings.length) extras.push(UI.plural(dep.mappings.length, 'CO-PO mapping'));
+    if (dep.notices.length) extras.push(UI.plural(dep.notices.length, 'notice'));
+
+    UI.confirm({
+      title: 'Delete ' + course.code + '?',
+      message: course.name + ' will be removed' +
+               (extras.length ? ', along with its ' + extras.join(', ') + '.' : '.') +
+               ' This cannot be undone.'
+    }, function () {
+      Store.removeCourseDeep(courseId);
+      UI.toast(course.code + ' deleted');
+      draw();
+    });
+  }
+
+  /* ---------------- buttons ---------------- */
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+
+  /* Handy for the report: copies the filtered rows as JSON. */
+  UI.el('btnExport').onclick = function () {
+    var text = JSON.stringify(visibleCourses(), null, 2);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { UI.toast(UI.plural(visibleCourses().length, 'course') + ' copied'); },
+        function () { showJson(text); }
+      );
+    } else {
+      showJson(text);
+    }
+  };
+
+  function showJson(text) {
+    UI.modal({
+      title: 'Course data (JSON)', wide: true, hideFooter: true,
+      body: '<textarea class="textarea mono" style="min-height:320px" readonly>' +
+            UI.esc(text) + '</textarea>'
+    });
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>

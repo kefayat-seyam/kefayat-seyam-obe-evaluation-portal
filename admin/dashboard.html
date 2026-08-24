@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Dashboard</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Department overview</h1>
+          <div class="sub" id="deptLine">—</div>
+        </div>
+        <div class="row-wrap">
+          <a class="btn" href="co-po.html">CO / PO Framework</a>
+          <a class="btn btn-primary" href="courses.html">Manage courses</a>
+        </div>
+      </div>
+
+      <!-- ---- the three headline numbers Step 1.1 asks for, plus credits ---- -->
+      <div class="grid grid-4 mb-2" id="statCards"></div>
+
+      <div class="grid grid-2 mb-2">
+        <!-- ---- where to go next ---- -->
+        <div class="card">
+          <div class="card-head"><h2>Manage the department</h2></div>
+          <div class="card-body tight" id="quickLinks"></div>
+        </div>
+
+        <!-- ---- OBE framework progress ---- -->
+        <div class="card">
+          <div class="card-head">
+            <h2>OBE framework progress</h2>
+            <a class="btn btn-sm" href="co-po.html">Open</a>
+          </div>
+          <div class="card-body" id="progressBox"></div>
+        </div>
+      </div>
+
+      <!-- ---- course spread across the 8 semesters ---- -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Courses by semester</h2>
+          <span class="small muted">Click a semester to filter Course Management</span>
+        </div>
+        <div class="card-body" id="semesterBox"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // Guard first: this page is for admins only.
+  var me = Auth.requireRole('admin');
+  if (!me) return;
+
+  Shell.mount({ role: 'admin', active: 'dashboard', title: 'Admin Dashboard' });
+
+  var dept = Store.department();
+  var stats = Store.stats();
+
+  UI.el('deptLine').textContent =
+    dept.name + ' · ' + dept.university + ' · session ' + dept.session;
+
+  /* ---------------- headline stat cards ---------------- */
+  var cards = [
+    { label: 'Total faculty',  value: stats.faculty,  icon: '👤', tone: 'blue',
+      note: stats.assignedCourses + ' courses assigned' },
+    { label: 'Total students', value: stats.students, icon: '🎓', tone: 'green',
+      note: stats.series + ' active series' },
+    { label: 'Total courses',  value: stats.courses,  icon: '📚', tone: 'amber',
+      note: stats.credits + ' credit hours' },
+    { label: 'Program outcomes', value: stats.programOutcomes, icon: '🎯', tone: 'purple',
+      note: stats.courseOutcomes + ' course outcomes' }
+  ];
+
+  UI.el('statCards').innerHTML = cards.map(function (c) {
+    return '<div class="stat">' +
+             '<div class="stat-ico tone-' + c.tone + '">' + c.icon + '</div>' +
+             '<div>' +
+               '<div class="stat-value">' + c.value + '</div>' +
+               '<div class="stat-label">' + UI.esc(c.label) + '</div>' +
+               '<div class="stat-note">' + UI.esc(c.note) + '</div>' +
+             '</div>' +
+           '</div>';
+  }).join('');
+
+  /* ---------------- quick links ----------------
+     Built from the same NAV list the sidebar uses, so a page added
+     there shows up here too. */
+  var descriptions = {
+    courses:  'Create, edit and delete the courses offered by the department.',
+    copo:     'Define program outcomes and the course outcomes of every course.',
+    faculty:  'Add teachers and assign them to courses.',
+    students: 'Enrol students under a series and semester.',
+    series:   'Open and close series and semesters.',
+    notices:  'Post department, semester and course level notices.'
+  };
+
+  UI.el('quickLinks').innerHTML = Shell.NAV.admin
+    .filter(function (item) { return item.href && item.id !== 'dashboard'; })
+    .map(function (item) {
+      return '<a class="list-row" href="' + item.href + '" style="color:inherit">' +
+               '<div class="stat-ico tone-' + (item.soon ? 'grey' : 'blue') + '" ' +
+                    'style="width:36px;height:36px;border-radius:10px">' +
+                 Shell.icon(item.icon) +
+               '</div>' +
+               '<div style="flex:1">' +
+                 '<div class="list-title">' + UI.esc(item.label) + '</div>' +
+                 '<div class="list-sub">' + UI.esc(descriptions[item.id] || '') + '</div>' +
+               '</div>' +
+               (item.soon
+                 ? '<span class="badge tone-grey">Visit 3</span>'
+                 : '<span class="badge tone-green">Ready</span>') +
+             '</a>';
+    }).join('');
+
+  /* ---------------- framework progress ---------------- */
+  function meter(caption, done, total, tone) {
+    var pct = total ? Math.round((done / total) * 100) : 0;
+    return '<div class="meter-row">' +
+             '<span class="cap">' + UI.esc(caption) + '</span>' +
+             '<span class="meter"><span style="width:' + pct + '%;' +
+               'background:var(--' + tone + ')"></span></span>' +
+             '<span class="num">' + done + '/' + total + '</span>' +
+           '</div>';
+  }
+
+  UI.el('progressBox').innerHTML =
+    meter('Courses with COs', stats.coursesWithOutcomes, stats.courses, 'blue') +
+    meter('Courses assigned', stats.assignedCourses, stats.courses, 'green') +
+    meter('POs defined', stats.programOutcomes, 12, 'purple') +
+    '<div class="small muted mt-2">' + stats.mappings + ' CO-PO mappings recorded so far. ' +
+      'Faculty add mappings from their own dashboard.</div>';
+
+  /* ---------------- courses per semester ---------------- */
+  var semesters = Store.semesters();
+  var counts = semesters.map(function (s) { return Store.coursesOfSemester(s.id).length; });
+  var biggest = Math.max.apply(null, counts.concat([1]));
+
+  UI.el('semesterBox').innerHTML = semesters.map(function (s, i) {
+    var list = Store.coursesOfSemester(s.id);
+    var credits = list.reduce(function (sum, c) { return sum + (c.credits || 0); }, 0);
+    return '<a class="meter-row" href="courses.html?semester=' + s.id + '" ' +
+              'style="color:inherit;text-decoration:none">' +
+             '<span class="cap">' + UI.esc(s.label) + '</span>' +
+             '<span class="meter"><span style="width:' +
+               Math.round((counts[i] / biggest) * 100) + '%"></span></span>' +
+             '<span class="num">' + counts[i] + ' · ' + (Math.round(credits * 100) / 100) + ' cr</span>' +
+           '</a>';
+  }).join('');
+})();
+</script>
+</body>
+</html>

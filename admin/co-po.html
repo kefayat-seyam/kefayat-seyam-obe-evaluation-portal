@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CO / PO Framework</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>CO / PO Framework</h1>
+          <div class="sub">Program outcomes belong to the department; course outcomes belong to a course.</div>
+        </div>
+        <div class="row-wrap" id="headBtns"></div>
+      </div>
+
+      <div class="tabs mb-2">
+        <button class="tab is-active" data-tab="po">Program Outcomes (PO)</button>
+        <button class="tab" data-tab="co">Course Outcomes (CO)</button>
+      </div>
+
+      <!-- ============ PO TAB ============ -->
+      <section id="tabPo">
+        <div class="grid grid-4 mb-2" id="poStats"></div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Program outcomes of the department</h2>
+            <span class="small muted" id="poCount"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th style="width:64px">Code</th>
+                  <th style="width:210px">Short title</th>
+                  <th>Statement</th>
+                  <th style="width:96px" class="right">Used by</th>
+                  <th style="width:112px"></th>
+                </tr>
+              </thead>
+              <tbody id="poRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="small muted mt-2">
+          PO data model: <code class="mono">{ id, departmentId, code, title, description }</code>.
+          The 12 seeded statements follow the BAETE / Washington Accord graduate attributes.
+        </p>
+      </section>
+
+      <!-- ============ CO TAB ============ -->
+      <section id="tabCo" class="hidden">
+        <div class="card mb-2">
+          <div class="card-body row-wrap">
+            <div style="flex:0 1 190px">
+              <label class="label" for="cSemester">Semester</label>
+              <select class="select" id="cSemester"></select>
+            </div>
+            <div style="flex:1 1 320px">
+              <label class="label" for="cCourse">Course</label>
+              <select class="select" id="cCourse"></select>
+            </div>
+            <div style="flex:0 0 auto;align-self:flex-end">
+              <button class="btn btn-primary" id="btnAddCo">+ Add course outcome</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-2 mb-2">
+          <div class="card">
+            <div class="card-head"><h2 id="coCourseName">—</h2></div>
+            <div class="card-body" id="coCourseMeta"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h2>CO-PO matrix</h2>
+              <span class="ro-note">Set by faculty · read-only here</span>
+            </div>
+            <div class="card-body" id="coMatrix"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Course outcomes</h2>
+            <span class="small muted" id="coCount"></span>
+          </div>
+          <div class="table-wrap">
+            <table class="tbl">
+              <thead>
+                <tr>
+                  <th style="width:64px">Code</th>
+                  <th>Outcome statement</th>
+                  <th style="width:230px">Mapped to</th>
+                  <th style="width:112px"></th>
+                </tr>
+              </thead>
+              <tbody id="coRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="small muted mt-2">
+          CO data model: <code class="mono">{ id, courseId, code, description }</code>.
+          Mapping data model: <code class="mono">{ id, coId, poId, level }</code> where level is
+          1 (low), 2 (medium) or 3 (high).
+        </p>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('admin');
+  if (!me) return;
+
+  Shell.mount({ role: 'admin', active: 'copo', title: 'CO / PO Framework' });
+
+  var dept = Store.department();
+  var semesters = Store.semesters();
+  var currentTab = /tab=co/.test(window.location.search) ? 'co' : 'po';
+
+  /* ================= tabs ================= */
+  function showTab(name) {
+    currentTab = name;
+    UI.qsa('.tab').forEach(function (t) {
+      t.classList.toggle('is-active', t.getAttribute('data-tab') === name);
+    });
+    UI.el('tabPo').classList.toggle('hidden', name !== 'po');
+    UI.el('tabCo').classList.toggle('hidden', name !== 'co');
+    UI.el('headBtns').innerHTML = name === 'po'
+      ? '<button class="btn btn-primary" id="btnAddPo">+ Add program outcome</button>'
+      : '';
+    if (name === 'po') UI.el('btnAddPo').onclick = function () { openPoForm(null); };
+  }
+
+  UI.qsa('.tab').forEach(function (tab) {
+    tab.onclick = function () { showTab(tab.getAttribute('data-tab')); };
+  });
+
+  /* ================= PO tab ================= */
+
+  /** How many COs (across all courses) point at this PO. */
+  function poUsage(poId) {
+    return Store.where('coPoMappings', function (m) { return m.poId === poId; }).length;
+  }
+
+  function drawPo() {
+    var list = Store.programOutcomesSorted();
+    var used = list.filter(function (po) { return poUsage(po.id) > 0; }).length;
+    var stats = Store.stats();
+
+    UI.el('poStats').innerHTML = [
+      { label: 'Program outcomes', value: list.length, note: 'target 12 for BAETE', tone: 'purple', icon: '🎯' },
+      { label: 'POs in use', value: used, note: 'referenced by a CO', tone: 'green', icon: '🔗' },
+      { label: 'Course outcomes', value: stats.courseOutcomes, note: 'across ' + stats.coursesWithOutcomes + ' courses', tone: 'blue', icon: '📌' },
+      { label: 'CO-PO mappings', value: stats.mappings, note: 'entered by faculty', tone: 'cyan', icon: '🧮' }
+    ].map(function (c) {
+      return '<div class="stat"><div class="stat-ico tone-' + c.tone + '">' + c.icon + '</div>' +
+             '<div><div class="stat-value">' + c.value + '</div>' +
+             '<div class="stat-label">' + c.label + '</div>' +
+             '<div class="stat-note">' + c.note + '</div></div></div>';
+    }).join('');
+
+    UI.el('poCount').textContent = UI.plural(list.length, 'outcome') + ' defined';
+
+    if (!list.length) {
+      UI.el('poRows').innerHTML = '<tr><td colspan="5">' +
+        UI.emptyState('🎯', 'No program outcome yet.', 'Add PO1 to get started.') + '</td></tr>';
+      return;
+    }
+
+    UI.el('poRows').innerHTML = list.map(function (po) {
+      var uses = poUsage(po.id);
+      return '<tr>' +
+        '<td><span class="badge tone-purple">' + UI.esc(po.code) + '</span></td>' +
+        '<td>' + UI.esc(po.title || '—') + '</td>' +
+        '<td class="soft">' + UI.esc(po.description) + '</td>' +
+        '<td class="right">' + (uses ? UI.plural(uses, 'CO') : '<span class="muted">—</span>') + '</td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-po-edit="' + po.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-po-del="' + po.id + '">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-po-edit]').forEach(function (b) {
+      b.onclick = function () { openPoForm(b.getAttribute('data-po-edit')); };
+    });
+    UI.qsa('[data-po-del]').forEach(function (b) {
+      b.onclick = function () { askDeletePo(b.getAttribute('data-po-del')); };
+    });
+  }
+
+  function openPoForm(poId) {
+    var po = poId ? Store.get('programOutcomes', poId) : null;
+    var isNew = !po;
+    if (isNew) po = { code: Store.nextProgramOutcomeCode(), title: '', description: '' };
+
+    UI.modal({
+      title: isNew ? 'New program outcome' : 'Edit ' + po.code,
+      okText: isNew ? 'Add outcome' : 'Save changes',
+      body:
+        '<div class="field-row">' +
+          '<div class="field" style="flex:0 1 110px"><label for="pCode">Code</label>' +
+            '<input class="input mono" id="pCode" value="' + UI.esc(po.code) + '"></div>' +
+          '<div class="field" style="flex:2 1 240px"><label for="pTitle">Short title</label>' +
+            '<input class="input" id="pTitle" placeholder="Problem Analysis" value="' +
+              UI.esc(po.title || '') + '"></div>' +
+        '</div>' +
+        '<div class="field"><label for="pDesc">Statement</label>' +
+          '<textarea class="textarea" id="pDesc" placeholder="Identify, formulate…">' +
+            UI.esc(po.description) + '</textarea>' +
+          '<div class="hint">Write it the way it should appear in the accreditation document.</div>' +
+        '</div>' +
+        '<div class="error-text" id="pErr"></div>',
+      onOk: function () {
+        var code = UI.el('pCode').value.trim().toUpperCase();
+        var desc = UI.el('pDesc').value.trim();
+        var err = UI.el('pErr');
+        if (!/^PO\s?\d+$/i.test(code)) {
+          err.textContent = 'Use a code like PO1 … PO12.'; return false;
+        }
+        code = code.replace(/\s+/g, '');
+        if (!desc) { err.textContent = 'A statement is required.'; return false; }
+        var clash = Store.where('programOutcomes', function (p) {
+          return p.code === code && p.id !== po.id;
+        })[0];
+        if (clash) { err.textContent = code + ' already exists.'; return false; }
+
+        var record = {
+          departmentId: dept.id, code: code,
+          title: UI.el('pTitle').value.trim(), description: desc
+        };
+        if (isNew) Store.add('programOutcomes', record);
+        else Store.update('programOutcomes', po.id, record);
+        UI.toast(code + (isNew ? ' added' : ' saved'));
+        drawPo();
+        if (currentTab === 'co') drawCo();
+      }
+    });
+  }
+
+  function askDeletePo(poId) {
+    var po = Store.get('programOutcomes', poId);
+    if (!po) return;
+    var mappings = Store.where('coPoMappings', function (m) { return m.poId === poId; });
+    UI.confirm({
+      title: 'Delete ' + po.code + '?',
+      message: mappings.length
+        ? po.code + ' is used by ' + UI.plural(mappings.length, 'CO-PO mapping') +
+          '. Those mappings will be deleted too.'
+        : 'This program outcome will be removed from the department.'
+    }, function () {
+      Store.removeProgramOutcomeDeep(poId);
+      UI.toast(po.code + ' deleted');
+      drawPo();
+    });
+  }
+
+  /* ================= CO tab ================= */
+
+  UI.el('cSemester').innerHTML = semesters.map(function (s) {
+    return '<option value="' + s.id + '">' + UI.esc(s.label) + '</option>';
+  }).join('');
+
+  // Optional deep link: co-po.html?tab=co&course=crs-12
+  var wantedCourse = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  // With no deep link, open on a course that already has outcomes so the
+  // tab does not greet you with an empty matrix.
+  if (!wantedCourse) wantedCourse = firstCourseWithOutcomes();
+  if (wantedCourse) {
+    var wanted = Store.get('courses', wantedCourse);
+    if (wanted) UI.el('cSemester').value = wanted.semester;
+  }
+
+  function firstCourseWithOutcomes() {
+    var withCos = Store.all('courseOutcomes').map(function (co) { return co.courseId; });
+    var found = Store.all('courses')
+      .filter(function (c) { return withCos.indexOf(c.id) >= 0; })
+      .sort(function (a, b) {
+        if (a.semester !== b.semester) return a.semester < b.semester ? -1 : 1;
+        return a.code < b.code ? -1 : 1;
+      })[0];
+    return found ? found.id : null;
+  }
+
+  function fillCourseSelect() {
+    var list = Store.coursesOfSemester(UI.el('cSemester').value)
+      .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+    UI.el('cCourse').innerHTML = list.map(function (c) {
+      var n = Store.outcomesOf(c.id).length;
+      return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) +
+             (n ? '  (' + n + ' CO)' : '') + '</option>';
+    }).join('') || '<option value="">No course in this semester</option>';
+    if (wantedCourse) { UI.el('cCourse').value = wantedCourse; wantedCourse = null; }
+  }
+
+  UI.el('cSemester').onchange = function () { fillCourseSelect(); drawCo(); };
+  UI.el('cCourse').onchange = drawCo;
+
+  function selectedCourse() {
+    return Store.get('courses', UI.el('cCourse').value);
+  }
+
+  function drawCo() {
+    var course = selectedCourse();
+    if (!course) {
+      UI.el('coCourseName').textContent = 'No course selected';
+      UI.el('coCourseMeta').innerHTML = '';
+      UI.el('coRows').innerHTML = '';
+      UI.el('coMatrix').innerHTML = '';
+      return;
+    }
+
+    var outcomes = Store.outcomesOf(course.id);
+    var pos = Store.programOutcomesSorted();
+    var mappings = Store.mappingsOfCourse(course.id);
+    var teacher = course.facultyId ? Store.get('users', course.facultyId) : null;
+
+    /* --- course info --- */
+    UI.el('coCourseName').textContent = course.code + ' — ' + course.name;
+    UI.el('coCourseMeta').innerHTML =
+      '<div class="row-wrap mb-2">' +
+        '<span class="chip">' + UI.esc(Store.semesterLabel(course.semester)) + '</span>' +
+        '<span class="chip">' + course.credits.toFixed(2) + ' credits</span>' +
+        '<span class="chip">' + UI.esc(course.type) + '</span>' +
+        (course.optional ? '<span class="chip">optional</span>' : '') +
+      '</div>' +
+      '<div class="small soft">Teacher: ' +
+        (teacher ? UI.esc(teacher.name) + ' · ' + UI.esc(teacher.designation || '')
+                 : '<span class="muted">not assigned yet</span>') + '</div>' +
+      '<div class="small soft mt-1">' + UI.plural(outcomes.length, 'course outcome') +
+        ' · ' + UI.plural(mappings.length, 'mapping') + '</div>' +
+      '<div class="mt-2"><a class="btn btn-sm" href="courses.html?semester=' + course.semester +
+        '">Open in Course Management</a></div>';
+
+    UI.el('coCount').textContent = UI.plural(outcomes.length, 'outcome');
+
+    /* --- CO table --- */
+    if (!outcomes.length) {
+      UI.el('coRows').innerHTML = '<tr><td colspan="4">' +
+        UI.emptyState('📌', 'This course has no course outcome yet.',
+                      'Add CO1 with the button above.') + '</td></tr>';
+    } else {
+      UI.el('coRows').innerHTML = outcomes.map(function (co) {
+        var mine = mappings.filter(function (m) { return m.coId === co.id; });
+        var chips = mine.length
+          ? mine.sort(byPoNumber).map(function (m) {
+              var po = Store.get('programOutcomes', m.poId);
+              return '<span class="badge tone-' + levelTone(m.level) + '">' +
+                     UI.esc(po ? po.code : '?') + ' · ' + m.level + '</span>';
+            }).join(' ')
+          : '<span class="muted small">not mapped</span>';
+        return '<tr>' +
+          '<td><span class="badge tone-blue">' + UI.esc(co.code) + '</span></td>' +
+          '<td>' + UI.esc(co.description) + '</td>' +
+          '<td>' + chips + '</td>' +
+          '<td><div class="actions">' +
+            '<button class="btn btn-sm" data-co-edit="' + co.id + '">Edit</button>' +
+            '<button class="btn btn-sm btn-ghost" data-co-del="' + co.id + '">✕</button>' +
+          '</div></td>' +
+        '</tr>';
+      }).join('');
+
+      UI.qsa('[data-co-edit]').forEach(function (b) {
+        b.onclick = function () { openCoForm(course, b.getAttribute('data-co-edit')); };
+      });
+      UI.qsa('[data-co-del]').forEach(function (b) {
+        b.onclick = function () { askDeleteCo(b.getAttribute('data-co-del')); };
+      });
+    }
+
+    /* --- read-only matrix --- */
+    if (!outcomes.length || !pos.length) {
+      UI.el('coMatrix').innerHTML = UI.emptyState('🧮', 'Nothing to show yet.',
+        'A matrix appears once this course has outcomes.');
+    } else {
+      var head = '<tr><th></th>' + pos.map(function (po) {
+        return '<th title="' + UI.esc(po.title || po.code) + '">' + UI.esc(po.code) + '</th>';
+      }).join('') + '</tr>';
+
+      var body = outcomes.map(function (co) {
+        return '<tr><th title="' + UI.esc(co.description) + '">' + UI.esc(co.code) + '</th>' +
+          pos.map(function (po) {
+            var hit = mappings.filter(function (m) {
+              return m.coId === co.id && m.poId === po.id;
+            })[0];
+            return hit
+              ? '<td class="lv' + hit.level + '">' + hit.level + '</td>'
+              : '<td class="blank">·</td>';
+          }).join('') + '</tr>';
+      }).join('');
+
+      UI.el('coMatrix').innerHTML =
+        '<div class="table-wrap"><table class="matrix">' +
+          '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>' +
+        '<div class="legend mt-2">' +
+          '<span><i style="background:var(--blue-soft)"></i>1 low</span>' +
+          '<span><i style="background:var(--cyan-soft)"></i>2 medium</span>' +
+          '<span><i style="background:var(--green-soft)"></i>3 high</span>' +
+          '<span><i style="background:var(--panel-2)"></i>not mapped</span>' +
+        '</div>';
+    }
+  }
+
+  function byPoNumber(a, b) {
+    var pa = Store.get('programOutcomes', a.poId) || { code: 'PO0' };
+    var pb = Store.get('programOutcomes', b.poId) || { code: 'PO0' };
+    return parseInt(pa.code.replace(/\D/g, ''), 10) - parseInt(pb.code.replace(/\D/g, ''), 10);
+  }
+
+  function levelTone(level) {
+    return level >= 3 ? 'green' : level === 2 ? 'cyan' : 'blue';
+  }
+
+  function openCoForm(course, coId) {
+    var co = coId ? Store.get('courseOutcomes', coId) : null;
+    var isNew = !co;
+    if (isNew) co = { code: Store.nextOutcomeCode(course.id), description: '' };
+
+    UI.modal({
+      title: (isNew ? 'New course outcome · ' : 'Edit ' + co.code + ' · ') + course.code,
+      okText: isNew ? 'Add outcome' : 'Save changes',
+      body:
+        '<div class="field" style="max-width:140px"><label for="oCode">Code</label>' +
+          '<input class="input mono" id="oCode" value="' + UI.esc(co.code) + '"></div>' +
+        '<div class="field"><label for="oDesc">Outcome statement</label>' +
+          '<textarea class="textarea" id="oDesc" placeholder="Apply Kirchhoff’s laws to…">' +
+            UI.esc(co.description) + '</textarea>' +
+          '<div class="hint">Start with an action verb the student can be assessed on ' +
+            '(explain, apply, analyse, design…).</div></div>' +
+        '<div class="error-text" id="oErr"></div>',
+      onOk: function () {
+        var code = UI.el('oCode').value.trim().toUpperCase().replace(/\s+/g, '');
+        var desc = UI.el('oDesc').value.trim();
+        var err = UI.el('oErr');
+        if (!/^CO\d+$/.test(code)) { err.textContent = 'Use a code like CO1, CO2 …'; return false; }
+        if (!desc) { err.textContent = 'An outcome statement is required.'; return false; }
+        var clash = Store.where('courseOutcomes', function (x) {
+          return x.courseId === course.id && x.code === code && x.id !== co.id;
+        })[0];
+        if (clash) { err.textContent = code + ' already exists for ' + course.code + '.'; return false; }
+
+        if (isNew) Store.add('courseOutcomes', { courseId: course.id, code: code, description: desc });
+        else Store.update('courseOutcomes', co.id, { code: code, description: desc });
+        UI.toast(code + (isNew ? ' added' : ' saved'));
+        fillCourseSelect();
+        UI.el('cCourse').value = course.id;
+        drawCo();
+      }
+    });
+  }
+
+  function askDeleteCo(coId) {
+    var co = Store.get('courseOutcomes', coId);
+    if (!co) return;
+    var mappings = Store.where('coPoMappings', function (m) { return m.coId === coId; });
+    UI.confirm({
+      title: 'Delete ' + co.code + '?',
+      message: mappings.length
+        ? 'Its ' + UI.plural(mappings.length, 'PO mapping') + ' will be deleted as well.'
+        : 'This course outcome will be removed.'
+    }, function () {
+      Store.removeOutcomeDeep(coId);
+      UI.toast(co.code + ' deleted');
+      fillCourseSelect();
+      drawCo();
+    });
+  }
+
+  UI.el('btnAddCo').onclick = function () {
+    var course = selectedCourse();
+    if (!course) return UI.toast('Pick a course first', 'error');
+    openCoForm(course, null);
+  };
+
+  /* ================= start ================= */
+  fillCourseSelect();
+  drawPo();
+  drawCo();
+  showTab(currentTab);
+})();
+</script>
+</body>
+</html>
