@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assignments</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Assignments</h1>
+          <div class="sub">Work set by your teachers, with the due date for each.</div>
+        </div>
+        <span class="ro-note">Read-only view</span>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body">
+          <label class="label" for="cCourse">Course</label>
+          <select class="select" id="cCourse"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="courseName">—</h2>
+          <span class="small muted" id="count"></span>
+        </div>
+        <div class="card-body tight" id="box"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('student');
+  if (!me) return;
+  Shell.mount({ role: 'student', active: 'assignments', title: 'Assignments' });
+
+  var today = UI.today();
+  var courses = Store.coursesOfStudent(me)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course</option>';
+    UI.el('courseName').textContent = 'No course';
+    UI.el('box').innerHTML = UI.emptyState('📝', 'No course found for your semester yet.');
+    return;
+  }
+
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  /* Turn a due date into a short human label + a colour. */
+  function due(dueDate) {
+    if (!dueDate) return { tone: 'grey', text: 'no due date' };
+    if (dueDate < today) return { tone: 'grey', text: 'closed ' + UI.date(dueDate) };
+    if (dueDate === today) return { tone: 'red', text: 'due today' };
+    return { tone: 'amber', text: 'due ' + UI.date(dueDate) };
+  }
+
+  function draw() {
+    var course = Store.get('courses', UI.el('cCourse').value);
+    var list = Store.assignmentsOf(course.id)
+      .slice().sort(function (a, b) {
+        return (a.dueDate || '') < (b.dueDate || '') ? -1 : 1;
+      });
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('count').textContent = UI.plural(list.length, 'assignment');
+
+    UI.el('box').innerHTML = list.length ? list.map(function (a) {
+      var d = due(a.dueDate);
+      return '<div class="list-row" style="align-items:flex-start">' +
+        '<div style="flex:1">' +
+          '<div class="row-wrap mb-1">' +
+            '<span class="badge tone-' + d.tone + '">' + UI.esc(d.text) + '</span>' +
+            '<span class="list-title">' + UI.esc(a.title) + '</span>' +
+          '</div>' +
+          '<div class="soft small">' + UI.esc(a.description || '') + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('') : UI.emptyState('📝', 'No assignment set for this course yet.',
+        'Your teacher will post assignments here.');
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>

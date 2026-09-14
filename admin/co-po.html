@@ -340,7 +340,8 @@
     var outcomes = Store.outcomesOf(course.id);
     var pos = Store.programOutcomesSorted();
     var mappings = Store.mappingsOfCourse(course.id);
-    var teacher = course.facultyId ? Store.get('users', course.facultyId) : null;
+    // A course can be shared, so we show every teacher on it.
+    var teacherLine = Store.teacherNames(course.id);
 
     /* --- course info --- */
     UI.el('coCourseName').textContent = course.code + ' — ' + course.name;
@@ -351,9 +352,9 @@
         '<span class="chip">' + UI.esc(course.type) + '</span>' +
         (course.optional ? '<span class="chip">optional</span>' : '') +
       '</div>' +
-      '<div class="small soft">Teacher: ' +
-        (teacher ? UI.esc(teacher.name) + ' · ' + UI.esc(teacher.designation || '')
-                 : '<span class="muted">not assigned yet</span>') + '</div>' +
+      '<div class="small soft">Teachers: ' +
+        (teacherLine ? UI.esc(teacherLine)
+                     : '<span class="muted">not assigned yet</span>') + '</div>' +
       '<div class="small soft mt-1">' + UI.plural(outcomes.length, 'course outcome') +
         ' · ' + UI.plural(mappings.length, 'mapping') + '</div>' +
       '<div class="mt-2"><a class="btn btn-sm" href="courses.html?semester=' + course.semester +

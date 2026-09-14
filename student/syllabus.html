@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Syllabus</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Syllabus</h1>
+          <div class="sub">The topics and outcomes for each of your courses.</div>
+        </div>
+        <span class="ro-note">Read-only view</span>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body">
+          <label class="label" for="cCourse">Course</label>
+          <select class="select" id="cCourse"></select>
+        </div>
+      </div>
+
+      <div class="grid grid-2 mb-2">
+        <div class="card">
+          <div class="card-head"><h2 id="courseName">—</h2></div>
+          <div class="card-body" id="courseMeta"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Course outcomes</h2><span class="small muted" id="coCount"></span></div>
+          <div class="card-body tight" id="coBox"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Topics</h2>
+          <span class="small muted" id="topicCount"></span>
+        </div>
+        <div class="card-body tight" id="topicBox"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('student');
+  if (!me) return;
+  Shell.mount({ role: 'student', active: 'syllabus', title: 'Syllabus' });
+
+  var courses = Store.coursesOfStudent(me)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course yet</option>';
+    UI.el('courseName').textContent = 'No course';
+    UI.el('topicBox').innerHTML = UI.emptyState('📚', 'No course found for your semester yet.');
+    return;
+  }
+
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  function draw() {
+    var course = Store.get('courses', UI.el('cCourse').value);
+    var cur = Store.curriculumOf(course.id);
+    var topics = cur && cur.topics ? cur.topics : [];
+    var cos = Store.outcomesOf(course.id);
+    // A course can be shared by more than one teacher, so ask for all the
+    // names at once: Store.teacherNames gives "A, B" (or '' if nobody yet).
+    var teachers = Store.teacherNames(course.id);
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('courseMeta').innerHTML =
+      '<div class="row-wrap mb-2">' +
+        '<span class="chip">' + UI.esc(Store.semesterLabel(course.semester)) + '</span>' +
+        '<span class="chip">' + (course.credits != null ? course.credits.toFixed(2) : '—') + ' credits</span>' +
+        '<span class="chip">' + UI.esc(course.type) + '</span>' +
+        (course.optional ? '<span class="chip">optional</span>' : '') +
+      '</div>' +
+      '<div class="small soft">' + (teachers ? 'Teachers: ' + UI.esc(teachers)
+                 : 'Teacher: <span class="muted">not assigned yet</span>') + '</div>';
+
+    UI.el('coCount').textContent = UI.plural(cos.length, 'outcome');
+    UI.el('coBox').innerHTML = cos.length ? cos.map(function (co) {
+      // Every CO has a short code (CO1), a short title, and the full
+      // sentence the teacher wrote.
+      return '<div class="list-row" style="align-items:flex-start">' +
+        '<span class="badge tone-blue">' + UI.esc(co.code) + '</span>' +
+        '<div style="flex:1">' +
+          (co.title ? '<div class="list-title">' + UI.esc(co.title) + '</div>' : '') +
+          '<div class="small soft">' + UI.esc(co.description) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('') : UI.emptyState('📌', 'No course outcome listed yet.');
+
+    UI.el('topicCount').textContent = UI.plural(topics.length, 'topic');
+    UI.el('topicBox').innerHTML = topics.length ? topics.map(function (t, i) {
+      return '<div class="list-row">' +
+        '<span class="badge tone-grey mono">' + (i + 1) + '</span>' +
+        '<div style="flex:1">' + UI.esc(t) + '</div>' +
+      '</div>';
+    }).join('') : UI.emptyState('📝', 'No topic listed for this course yet.');
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Question Setup</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Question Setup</h1>
+          <div class="sub">List the questions of each paper and say which CO and PO every question tests.</div>
+        </div>
+        <div class="row-wrap">
+          <button class="btn" id="btnEqual">Set up N equal questions</button>
+          <button class="btn btn-primary" id="btnAdd">+ Add question</button>
+        </div>
+      </div>
+
+      <p class="small muted">
+        A paper's questions do not have to be four — put in as many as your question
+        paper really has. Each question's marks are shared between one or more
+        CO / PO pairs, and those shares are what the attainment report counts.
+        A paper you never set up here simply keeps the old single-box mark entry.
+      </p>
+
+      <div class="card mb-2">
+        <div class="card-body row-wrap">
+          <div style="flex:1 1 320px">
+            <label class="label" for="cCourse">My course</label>
+            <select class="select" id="cCourse"></select>
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end">
+            <span class="small muted" id="courseLine"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs mb-2" id="paperTabs"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="paperName">—</h2>
+          <span class="small muted" id="paperTotal"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:70px" class="center">Q.No</th>
+                <th style="width:96px" class="center">Max marks</th>
+                <th>CO / PO breakdown</th>
+                <th style="width:112px"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        Question model: <code class="mono">{ id, courseId, paper, qNo, maxMarks, tags: [ {coId, poId, marks} ] }</code>.
+        The tag marks must add up to the question's max marks.
+        Deleting a question also deletes the marks students were given for it.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'questions', title: 'Question Setup' });
+
+  var COLSPAN = 4;
+  var currentPaper = Store.PAPERS[0];    // 'ct1' to start with
+
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course assigned to you</option>';
+    UI.el('paperName').textContent = 'No course assigned';
+    UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+      UI.emptyState('📝', 'You have no course to set questions for yet.') + '</td></tr>';
+    UI.el('btnAdd').disabled = true;
+    UI.el('btnEqual').disabled = true;
+    return;
+  }
+
+  // Deep link: questions.html?course=crs-3
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  function currentCourse() { return Store.get('courses', UI.el('cCourse').value); }
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  /* ---------------- the paper picker ----------------
+     One small tab per paper, built straight from Store.PAPERS so adding a
+     paper to the store adds a tab here without touching this page. */
+  function drawTabs() {
+    var course = currentCourse();
+    UI.el('paperTabs').innerHTML = Store.PAPERS.map(function (p) {
+      var n = Store.questionsOf(course.id, p).length;
+      return '<button class="tab' + (p === currentPaper ? ' is-active' : '') +
+             '" data-paper="' + p + '">' + UI.esc(shortLabel(p)) +
+             (n ? ' (' + n + ')' : '') + '</button>';
+    }).join('');
+    UI.qsa('#paperTabs .tab').forEach(function (tab) {
+      tab.onclick = function () {
+        currentPaper = tab.getAttribute('data-paper');
+        draw();
+      };
+    });
+  }
+
+  /* 'Class Test 1' is long for a tab, so the tabs use a short form. */
+  function shortLabel(paper) {
+    return {
+      ct1: 'CT-1', ct2: 'CT-2', ct3: 'CT-3', ct4: 'CT-4',
+      finalA: 'Final Part A', finalB: 'Final Part B'
+    }[paper] || paper;
+  }
+
+  /* ---------------- the question table ---------------- */
+
+  function draw() {
+    var course = currentCourse();
+    var questions = Store.questionsOf(course.id, currentPaper);
+    var outOf = Store.paperOutOf(currentPaper);
+    var have = Store.paperMax(course.id, currentPaper);
+
+    drawTabs();
+
+    UI.el('courseLine').textContent =
+      UI.plural(Store.questionsOfCourse(course.id).length, 'question') +
+      ' set up across all papers';
+    UI.el('paperName').textContent =
+      course.code + ' · ' + Store.paperLabel(currentPaper);
+
+    // "Questions total 18 of 20 marks", with a gentle nudge when they differ.
+    UI.el('paperTotal').innerHTML = questions.length
+      ? 'Questions total ' + round1(have) + ' of ' + outOf + ' marks' +
+        (round1(have) === outOf ? ''
+          : ' · <span class="badge tone-amber">does not add up to ' + outOf + '</span>')
+      : 'This paper has no question yet · falls back to the single mark box';
+
+    if (!questions.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+        UI.emptyState('📝', 'No question for ' + Store.paperLabel(currentPaper) + ' yet.',
+          'Add them one by one, or use "Set up N equal questions".') + '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = questions.map(function (q) {
+      return '<tr>' +
+        '<td class="center tbl-code">Q' + UI.esc(q.qNo) + '</td>' +
+        '<td class="center mono">' + UI.esc(q.maxMarks) + '</td>' +
+        '<td>' + tagChips(q) + '</td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-edit="' + q.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + q.id + '" title="Remove">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  /** Each tag shown as "CO2 / PO9 — 3". */
+  function tagChips(q) {
+    var tags = q.tags || [];
+    if (!tags.length) {
+      return '<span class="muted small">no CO / PO tagged yet — edit this question</span>';
+    }
+    return tags.map(function (t) {
+      var co = t.coId ? Store.get('courseOutcomes', t.coId) : null;
+      var po = t.poId ? Store.get('programOutcomes', t.poId) : null;
+      return '<span class="chip">' + UI.esc(co ? co.code : '?') + ' / ' +
+             UI.esc(po ? po.code : '?') + ' — ' + UI.esc(t.marks) + '</span>';
+    }).join(' ');
+  }
+
+  /* ---------------- option lists for the tag editor ---------------- */
+
+  function coOptions(selectedId) {
+    var course = currentCourse();
+    var list = Store.outcomesOf(course.id);
+    return '<option value="">Choose a CO</option>' + list.map(function (co) {
+      var label = co.code + (co.title ? ' — ' + co.title : '');
+      return '<option value="' + co.id + '"' + (co.id === selectedId ? ' selected' : '') + '>' +
+             UI.esc(label) + '</option>';
+    }).join('');
+  }
+
+  function poOptions(selectedId) {
+    var list = Store.all('programOutcomes').sort(function (a, b) {
+      return numberIn(a.code) - numberIn(b.code);
+    });
+    return '<option value="">Choose a PO</option>' + list.map(function (po) {
+      var label = po.code + (po.title ? ' — ' + po.title : '');
+      return '<option value="' + po.id + '"' + (po.id === selectedId ? ' selected' : '') + '>' +
+             UI.esc(label) + '</option>';
+    }).join('');
+  }
+
+  function numberIn(code) {
+    var m = /(\d+)/.exec(code || '');
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  /* ---------------- add / edit one question ----------------
+     While the dialog is open, `working` holds the tag rows as plain
+     objects. Every time a row is added or removed we first copy what is
+     typed on screen back into `working`, so nothing gets lost. */
+
+  var working = [];
+
+  function openForm(questionId) {
+    var course = currentCourse();
+    var outcomes = Store.outcomesOf(course.id);
+
+    if (!outcomes.length) {
+      UI.toast('Write the course outcomes first', 'error');
+      return;
+    }
+
+    var q = questionId ? Store.get('questions', questionId) : null;
+    var isNew = !q;
+    if (isNew) q = { qNo: nextQuestionNumber(course.id, currentPaper), maxMarks: 5, tags: [] };
+
+    working = (q.tags || []).map(function (t) {
+      return { coId: t.coId || '', poId: t.poId || '', marks: t.marks };
+    });
+    if (!working.length) working.push({ coId: '', poId: '', marks: '' });
+
+    UI.modal({
+      wide: true,
+      title: (isNew ? 'New question · ' : 'Edit Q' + q.qNo + ' · ') +
+             course.code + ' · ' + Store.paperLabel(currentPaper),
+      okText: isNew ? 'Add question' : 'Save changes',
+      body:
+        '<div class="field-row">' +
+          '<div class="field" style="flex:0 1 120px"><label for="qNo">Q.No</label>' +
+            '<input class="input mono" id="qNo" type="number" min="1" step="1" value="' +
+              UI.esc(q.qNo) + '"></div>' +
+          '<div class="field" style="flex:0 1 140px"><label for="qMax">Max marks</label>' +
+            '<input class="input mono" id="qMax" type="number" min="0.5" step="0.5" value="' +
+              UI.esc(q.maxMarks) + '"></div>' +
+        '</div>' +
+        '<div class="label">CO / PO breakdown</div>' +
+        '<div class="small muted mb-1">One row per CO / PO pair. The marks in these ' +
+          'rows must add up to the question\'s max marks.</div>' +
+        '<div id="qTags"></div>' +
+        '<div class="row-wrap mb-1">' +
+          '<button class="btn btn-sm" id="qAddTag" type="button">+ Add another CO/PO</button>' +
+          '<span class="small muted" id="qRunning"></span>' +
+        '</div>' +
+        '<div class="error-text" id="qErr"></div>',
+      onOk: function () { return saveForm(course, q, isNew, questionId); }
+    });
+
+    renderTags();
+    UI.el('qAddTag').onclick = function () {
+      readTags();
+      working.push({ coId: '', poId: '', marks: '' });
+      renderTags();
+    };
+    UI.el('qMax').oninput = updateRunning;
+  }
+
+  /** Draw the tag rows from `working` and wire their buttons. */
+  function renderTags() {
+    UI.el('qTags').innerHTML = working.map(function (t, i) {
+      return '<div class="field-row" data-tag-row="' + i + '">' +
+        '<div class="field" style="flex:2 1 230px">' +
+          '<select class="select" data-tag-co>' + coOptions(t.coId) + '</select></div>' +
+        '<div class="field" style="flex:2 1 210px">' +
+          '<select class="select" data-tag-po>' + poOptions(t.poId) + '</select></div>' +
+        '<div class="field" style="flex:0 1 100px">' +
+          '<input class="input center mono" type="number" min="0" step="0.5" ' +
+            'placeholder="marks" data-tag-marks value="' + UI.esc(t.marks) + '"></div>' +
+        '<div class="field" style="flex:0 0 auto;align-self:center">' +
+          '<button class="btn btn-sm btn-ghost" type="button" data-tag-del="' + i +
+            '" title="Remove this CO/PO">✕</button></div>' +
+      '</div>';
+    }).join('');
+
+    UI.qsa('[data-tag-del]').forEach(function (b) {
+      b.onclick = function () {
+        readTags();
+        working.splice(parseInt(b.getAttribute('data-tag-del'), 10), 1);
+        if (!working.length) working.push({ coId: '', poId: '', marks: '' });
+        renderTags();
+      };
+    });
+    UI.qsa('[data-tag-marks]').forEach(function (inp) { inp.oninput = updateRunning; });
+    updateRunning();
+  }
+
+  /** Copy what is typed on screen back into `working`. */
+  function readTags() {
+    UI.qsa('[data-tag-row]').forEach(function (row, i) {
+      working[i] = {
+        coId: UI.qs('[data-tag-co]', row).value,
+        poId: UI.qs('[data-tag-po]', row).value,
+        marks: UI.qs('[data-tag-marks]', row).value
+      };
+    });
+  }
+
+  /** "3 of 5 marks assigned" under the tag rows. */
+  function updateRunning() {
+    var assigned = 0;
+    UI.qsa('[data-tag-marks]').forEach(function (inp) {
+      var n = parseFloat(inp.value);
+      if (!isNaN(n)) assigned += n;
+    });
+    var max = parseFloat(UI.el('qMax').value);
+    if (isNaN(max)) max = 0;
+    var line = round1(assigned) + ' of ' + round1(max) + ' marks assigned';
+    if (round1(assigned) !== round1(max)) line += ' · they must match';
+    UI.el('qRunning').textContent = line;
+  }
+
+  /** Checks everything, then writes the question. Returns false to keep
+      the dialog open when something is wrong. */
+  function saveForm(course, q, isNew, questionId) {
+    readTags();
+    var err = UI.el('qErr');
+    var qNo = parseInt(UI.el('qNo').value, 10);
+    var max = parseFloat(UI.el('qMax').value);
+
+    if (isNaN(qNo) || qNo < 1) { err.textContent = 'Give the question a number, e.g. 1.'; return false; }
+    if (isNaN(max) || max <= 0) { err.textContent = 'Max marks must be more than 0.'; return false; }
+
+    // Two questions of the same paper must not share a number.
+    var clash = Store.questionsOf(course.id, currentPaper).filter(function (x) {
+      return x.qNo === qNo && x.id !== (questionId || '');
+    })[0];
+    if (clash) {
+      err.textContent = 'Q' + qNo + ' already exists in ' + Store.paperLabel(currentPaper) + '.';
+      return false;
+    }
+
+    if (!working.length) { err.textContent = 'Add at least one CO / PO row.'; return false; }
+
+    var tags = [];
+    var sum = 0;
+    for (var i = 0; i < working.length; i += 1) {
+      var t = working[i];
+      var marks = parseFloat(t.marks);
+      if (!t.coId) { err.textContent = 'Row ' + (i + 1) + ': choose a course outcome.'; return false; }
+      if (!t.poId) { err.textContent = 'Row ' + (i + 1) + ': choose a program outcome.'; return false; }
+      if (isNaN(marks) || marks <= 0) {
+        err.textContent = 'Row ' + (i + 1) + ': marks must be more than 0.'; return false;
+      }
+      sum += marks;
+      tags.push({ coId: t.coId, poId: t.poId, marks: marks });
+    }
+
+    if (round1(sum) !== round1(max)) {
+      err.textContent = 'The CO / PO rows add up to ' + round1(sum) + ', but the question is ' +
+                        'worth ' + round1(max) + '. Make them match.';
+      return false;
+    }
+
+    var record = {
+      courseId: course.id, paper: currentPaper,
+      qNo: qNo, maxMarks: max, tags: tags
+    };
+    if (isNew) { Store.add('questions', record); UI.toast('Q' + qNo + ' added'); }
+    else { Store.update('questions', questionId, record); UI.toast('Q' + qNo + ' saved'); }
+    draw();
+  }
+
+  /** The first free question number in this paper. */
+  function nextQuestionNumber(courseId, paper) {
+    var used = Store.questionsOf(courseId, paper).map(function (q) { return q.qNo; });
+    var n = 1;
+    while (used.indexOf(n) >= 0) n += 1;
+    return n;
+  }
+
+  /* ---------------- delete ---------------- */
+
+  function askDelete(questionId) {
+    var q = Store.get('questions', questionId);
+    if (!q) return;
+    var marks = Store.where('questionMarks', function (m) { return m.questionId === questionId; });
+    UI.confirm({
+      title: 'Delete Q' + q.qNo + '?',
+      message: marks.length
+        ? 'The ' + UI.plural(marks.length, 'student mark') + ' given for this question ' +
+          'will be deleted too. This cannot be undone.'
+        : 'This question will be removed from ' + Store.paperLabel(q.paper) + '.'
+    }, function () {
+      Store.removeQuestionDeep(questionId);
+      UI.toast('Q' + q.qNo + ' deleted');
+      draw();
+    });
+  }
+
+  /* ---------------- the "N equal questions" helper ----------------
+     Most papers are just N questions of the same size. This builds them
+     in one go: the paper's total is split evenly, and any remainder is
+     given one mark at a time to the first questions so the parts still
+     add up exactly (30 over 4 questions -> 8, 8, 7, 7). */
+
+  function openEqualForm() {
+    var course = currentCourse();
+    var outOf = Store.paperOutOf(currentPaper);
+    var existing = Store.questionsOf(course.id, currentPaper);
+
+    UI.modal({
+      title: 'Set up equal questions · ' + Store.paperLabel(currentPaper),
+      okText: 'Create questions',
+      body:
+        '<div class="field" style="max-width:180px">' +
+          '<label for="eqN">How many questions?</label>' +
+          '<input class="input mono" id="eqN" type="number" min="1" max="30" step="1" value="4">' +
+        '</div>' +
+        '<p class="small soft">' + UI.esc(Store.paperLabel(currentPaper)) + ' is out of ' +
+          outOf + ' marks. Those marks are split as evenly as possible, and the ' +
+          'questions start with no CO / PO tags — open each one and tag it.</p>' +
+        (existing.length
+          ? '<p class="small soft"><b>Careful:</b> this paper already has ' +
+            UI.plural(existing.length, 'question') + '. They and any marks given ' +
+            'for them will be replaced.</p>'
+          : '') +
+        '<div class="error-text" id="eqErr"></div>',
+      onOk: function () {
+        var n = parseInt(UI.el('eqN').value, 10);
+        var err = UI.el('eqErr');
+        if (isNaN(n) || n < 1 || n > 30) {
+          err.textContent = 'Choose a number between 1 and 30.'; return false;
+        }
+
+        // out with the old ones (and the marks that hung off them)
+        existing.forEach(function (q) { Store.removeQuestionDeep(q.id); });
+
+        var base = Math.floor(outOf / n);       // every question gets at least this
+        var spare = outOf - base * n;           // the leftover marks
+        for (var i = 0; i < n; i += 1) {
+          Store.add('questions', {
+            courseId: course.id,
+            paper: currentPaper,
+            qNo: i + 1,
+            maxMarks: base + (i < spare ? 1 : 0),
+            tags: []
+          });
+        }
+        UI.toast(UI.plural(n, 'question') + ' created');
+        draw();
+      }
+    });
+  }
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+  UI.el('btnEqual').onclick = openEqualForm;
+  draw();
+})();
+</script>
+</body>
+</html>

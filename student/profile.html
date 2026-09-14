@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Profile</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>My profile</h1>
+          <div class="sub">Your own details, your account information and your password.</div>
+        </div>
+      </div>
+
+      <div class="grid grid-2 mb-2">
+
+        <!-- ---------- card 1: the details the STUDENT owns ---------- -->
+        <div class="card">
+          <div class="card-head">
+            <h2>My details</h2>
+            <span class="small muted">you fill these in</span>
+          </div>
+          <div class="card-body">
+            <div class="small soft mb-2" id="setupLine"></div>
+
+            <div class="field"><label for="fName">Full name</label>
+              <input class="input" id="fName" placeholder="e.g. Nusrat Jahan"></div>
+
+            <div class="field-row">
+              <div class="field"><label for="fSection">Section</label>
+                <input class="input" id="fSection" maxlength="4" placeholder="e.g. A">
+                <div class="hint">Just the letter of your section, such as A or B.</div>
+              </div>
+              <div class="field"><label for="fContact">Contact number</label>
+                <input class="input" id="fContact" placeholder="e.g. 01700-000000">
+                <div class="hint">Optional, but useful for your teachers.</div>
+              </div>
+            </div>
+
+            <div class="error-text" id="pErr"></div>
+            <div class="mt-2">
+              <button class="btn btn-primary" id="btnProfile">Save my details</button>
+            </div>
+            <div class="mt-2" id="pOk"></div>
+          </div>
+        </div>
+
+        <!-- ---------- card 2: what the DEPARTMENT owns ---------- -->
+        <div class="card">
+          <div class="card-head">
+            <h2>My account</h2>
+            <span class="small muted">set by the department</span>
+          </div>
+          <div class="card-body">
+            <div class="field"><label for="acRoll">Roll</label>
+              <input class="input mono" id="acRoll" readonly></div>
+            <div class="field"><label for="acEmail">Login ID</label>
+              <input class="input mono" id="acEmail" readonly></div>
+            <div class="field-row">
+              <div class="field"><label for="acSeries">Series</label>
+                <input class="input" id="acSeries" readonly></div>
+              <div class="field"><label for="acSemester">Semester</label>
+                <input class="input" id="acSemester" readonly></div>
+            </div>
+            <div class="small muted">
+              These four are created by the department when your roll is enrolled.
+              They cannot be changed from this page — if any of them is wrong,
+              tell the department office.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ---------- card 3: password ---------- -->
+      <div class="card">
+        <div class="card-head">
+          <h2>Change password</h2>
+          <span class="small muted">only you can do this</span>
+        </div>
+        <div class="card-body">
+          <div class="field-row">
+            <div class="field"><label for="fCurrent">Current password</label>
+              <input class="input" type="password" id="fCurrent" placeholder="Your current password"></div>
+            <div class="field"><label for="fNew">New password</label>
+              <input class="input" type="password" id="fNew" placeholder="At least 4 characters"></div>
+            <div class="field"><label for="fConfirm">Confirm new password</label>
+              <input class="input" type="password" id="fConfirm" placeholder="Type the new password again"></div>
+          </div>
+          <div class="error-text" id="fErr"></div>
+          <div class="mt-2">
+            <button class="btn btn-primary" id="btnPassword">Update password</button>
+          </div>
+          <div class="small muted mt-2">
+            The default password for every new student is
+            <code class="mono">student123</code>. You will use your new password
+            the next time you log in.
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('student');
+  if (!me) return;
+  Shell.mount({ role: 'student', active: 'profile', title: 'My Profile' });
+
+  /* The admin only creates a ROLL for each student. The name, the section
+     and the contact number are the student's own to fill in, and they are
+     the ONLY three things this page can write. Both writes below go through
+     purpose-named Store functions (saveProfile / setPassword) — this page
+     never edits a mark, an attendance row or any other academic record. */
+
+  // Was the profile already finished when the page opened? We remember it so
+  // we can say something friendly the first time the student completes it.
+  var wasComplete = !!me.profileComplete;
+
+  drawDetails();
+  drawAccount();
+  drawSetupLine();
+
+  /* ---------------- card 1: my details (editable) ---------------- */
+
+  function drawDetails() {
+    UI.el('fName').value = me.name || '';
+    UI.el('fSection').value = me.section || '';
+    UI.el('fContact').value = me.contact || '';
+  }
+
+  /* A short line at the top of the form that changes with the situation. */
+  function drawSetupLine() {
+    UI.el('setupLine').textContent = me.profileComplete
+      ? 'You can correct these any time.'
+      : 'Your roll is ready. Please add your name and section so your ' +
+        'teachers can see who you are.';
+  }
+
+  UI.el('btnProfile').onclick = function () {
+    var err = UI.el('pErr');
+    err.textContent = '';
+    UI.el('pOk').innerHTML = '';
+
+    // Store.saveProfile does the real checking (name and section are
+    // required) and it also uppercases the section for us.
+    var res = Store.saveProfile(me.id, {
+      name: UI.el('fName').value,
+      section: UI.el('fSection').value,
+      contact: UI.el('fContact').value
+    });
+
+    if (!res.ok) {
+      err.textContent = res.error;
+      UI.toast(res.error, 'error');
+      return;
+    }
+
+    // Read our own record back so the page shows exactly what was saved.
+    me = Auth.current();
+    drawDetails();
+    drawAccount();
+    drawSetupLine();
+    refreshTopbarName();
+
+    if (!wasComplete) {
+      // First time they finish it — worth a warmer word than a toast.
+      UI.el('pOk').innerHTML =
+        '<span class="badge tone-green">All set</span> ' +
+        '<span class="small soft">Thank you, ' +
+          UI.esc((me.name || '').split(' ')[0]) +
+          '. Your profile is complete, so your name and section now appear ' +
+          'everywhere your teachers see you.</span>';
+      wasComplete = true;
+    }
+    UI.toast('Profile saved');
+  };
+
+  /* The top bar was drawn before we saved, so its name and initials are
+     still the old ones. Nudge them so the page does not look out of date. */
+  function refreshTopbarName() {
+    var nameBox = UI.qs('.who-name');
+    var avatar = UI.qs('.avatar');
+    if (nameBox) nameBox.textContent = me.name || '';
+    if (avatar) avatar.textContent = UI.initials(me.name);
+  }
+
+  /* ---------------- card 2: my account (read-only) ---------------- */
+
+  function drawAccount() {
+    var series = me.seriesId ? Store.get('series', me.seriesId) : null;
+    UI.el('acRoll').value = me.roll || '—';
+    UI.el('acEmail').value = me.email || '—';
+    UI.el('acSeries').value = series ? series.name : '—';
+    UI.el('acSemester').value = Store.semesterLabel(me.semester);
+  }
+
+  /* ---------------- card 3: change password ----------------
+     The actual write is done by Store.setPassword, which checks the current
+     password first. This page only collects and validates the three fields. */
+
+  UI.el('btnPassword').onclick = function () {
+    var err = UI.el('fErr');
+    err.textContent = '';
+
+    var current = UI.el('fCurrent').value;
+    var next = UI.el('fNew').value;
+    var again = UI.el('fConfirm').value;
+
+    if (!current) { err.textContent = 'Enter your current password.'; return; }
+    if (!next)    { err.textContent = 'Enter a new password.'; return; }
+    if (next.length < 4) { err.textContent = 'The new password must be at least 4 characters.'; return; }
+    if (next !== again)  { err.textContent = 'The two new passwords do not match.'; return; }
+    if (next === current) { err.textContent = 'The new password is the same as your current one.'; return; }
+
+    var res = Store.setPassword(me.id, current, next);
+    if (!res.ok) {
+      err.textContent = res.error;
+      UI.toast(res.error, 'error');
+      return;
+    }
+
+    UI.el('fCurrent').value = '';
+    UI.el('fNew').value = '';
+    UI.el('fConfirm').value = '';
+    UI.toast('Password updated');
+  };
+})();
+</script>
+</body>
+</html>

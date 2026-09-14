@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notices</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Notices</h1>
+          <div class="sub">Everything addressed to your department, semester and courses.</div>
+        </div>
+        <span class="ro-note">Read-only view</span>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="row-wrap" style="flex:1">
+            <div class="search">
+              <input class="input" id="q" placeholder="Search notices…">
+            </div>
+            <select class="select" id="fLevel" style="flex:0 1 190px">
+              <option value="">All levels</option>
+              <option value="department">Department</option>
+              <option value="semester">My semester</option>
+              <option value="course">My courses</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btnClear">Clear</button>
+          </div>
+          <span class="small muted" id="countLine"></span>
+        </div>
+        <div class="card-body tight" id="rows"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('student');
+  if (!me) return;
+  Shell.mount({ role: 'student', active: 'notices', title: 'Notices' });
+
+  var TONE = { department: 'purple', semester: 'cyan', course: 'amber' };
+  var courses = Store.coursesOfStudent(me);
+  var myCourseIds = courses.map(function (c) { return c.id; });
+
+  /* The notices this student is allowed to see. */
+  function myNotices() {
+    return Store.all('notices').filter(function (n) {
+      if (n.level === 'department') return true;
+      if (n.level === 'semester') return n.semester === me.semester;
+      if (n.level === 'course') return myCourseIds.indexOf(n.courseId) >= 0;
+      return false;
+    });
+  }
+
+  ['q', 'fLevel'].forEach(function (id) {
+    UI.el(id).oninput = draw;
+    UI.el(id).onchange = draw;
+  });
+  UI.el('btnClear').onclick = function () {
+    UI.el('q').value = ''; UI.el('fLevel').value = ''; draw();
+  };
+
+  function draw() {
+    var q = UI.el('q').value.trim().toLowerCase();
+    var level = UI.el('fLevel').value;
+    var all = myNotices();
+    var list = all.filter(function (n) {
+      if (level && n.level !== level) return false;
+      if (q && (n.title + ' ' + n.message).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+
+    UI.el('countLine').textContent = list.length === all.length
+      ? UI.plural(all.length, 'notice')
+      : 'Showing ' + list.length + ' of ' + all.length + ' notices';
+
+    if (!list.length) {
+      UI.el('rows').innerHTML = UI.emptyState('🔔', 'No notice matches.',
+        'Try clearing the filters.');
+      return;
+    }
+
+    UI.el('rows').innerHTML = list.map(function (n) {
+      var scope = n.level === 'course' ? Store.courseTitle(n.courseId)
+        : n.level === 'semester' ? Store.semesterLabel(n.semester) : 'Whole department';
+      return '<div class="list-row" style="align-items:flex-start">' +
+        '<div style="flex:1">' +
+          '<div class="row-wrap mb-1">' +
+            '<span class="badge tone-' + TONE[n.level] + '">' + UI.esc(n.level) + '</span>' +
+            '<span class="list-title">' + UI.esc(n.title) + '</span>' +
+          '</div>' +
+          '<div class="soft small">' + UI.esc(n.message) + '</div>' +
+          '<div class="list-sub mt-1">' + UI.esc(scope) + ' · ' +
+            UI.esc(n.author || 'Department') + ' · ' + UI.date(n.date) + '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>

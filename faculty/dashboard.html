@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Faculty Dashboard</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1 id="hi">My teaching</h1>
+          <div class="sub" id="deptLine">—</div>
+        </div>
+      </div>
+
+      <div class="grid grid-4 mb-2" id="statCards"></div>
+
+      <div class="card mb-2">
+        <div class="card-head">
+          <h2>Where to start</h2>
+          <span class="small muted">the outcome-based teaching cycle</span>
+        </div>
+        <div class="card-body">
+          <div class="grid grid-4">
+            <a class="course-card" href="outcomes.html">
+              <div class="code">STEP 1</div>
+              <div class="name">Course Outcomes</div>
+              <div class="small soft mt-1">Write the COs your students will be measured against.</div>
+            </a>
+            <a class="course-card" href="questions.html">
+              <div class="code">STEP 2</div>
+              <div class="name">Question Setup</div>
+              <div class="small soft mt-1">List each paper's questions and tag them with a CO and a PO.</div>
+            </a>
+            <a class="course-card" href="assignments.html">
+              <div class="code">STEP 3</div>
+              <div class="name">Assignments</div>
+              <div class="small soft mt-1">Set the tasks your class has to hand in.</div>
+            </a>
+            <a class="course-card" href="attainment.html">
+              <div class="code">STEP 4</div>
+              <div class="name">CO / PO Attainment</div>
+              <div class="small soft mt-1">See how much of the class reached each outcome.</div>
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-head">
+          <h2>My courses</h2>
+          <span class="small muted" id="courseCount"></span>
+        </div>
+        <div class="card-body" id="courseBox"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Notices for me</h2>
+          <a class="btn btn-sm" href="notices.html">Open notices</a>
+        </div>
+        <div class="card-body tight" id="noticeBox"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'dashboard', title: 'My Dashboard' });
+
+  var dept = Store.department();
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  UI.el('hi').textContent = 'Welcome, ' + me.name.split(' ')[0];
+  UI.el('deptLine').textContent =
+    (me.designation || 'Faculty') + ' · ' + dept.name;
+
+  /* ---------------- headline numbers ---------------- */
+  // Students taught = everyone on the class list of a course I teach,
+  // counted once even if I teach them more than one course.
+  var taught = {};
+  courses.forEach(function (c) {
+    Store.studentsOfCourse(c).forEach(function (s) { taught[s.id] = true; });
+  });
+  var studentsTaught = Object.keys(taught).length;
+  var coCount = courses.reduce(function (sum, c) {
+    return sum + Store.outcomesOf(c.id).length;
+  }, 0);
+  var assignCount = courses.reduce(function (sum, c) {
+    return sum + Store.assignmentsOf(c.id).length;
+  }, 0);
+
+  var cards = [
+    { label: 'My courses',       value: courses.length,  icon: '📚', tone: 'blue' },
+    { label: 'Students taught',  value: studentsTaught,   icon: '🎓', tone: 'green' },
+    { label: 'Course outcomes',  value: coCount,          icon: '🎯', tone: 'purple' },
+    { label: 'Assignments',      value: assignCount,      icon: '📝', tone: 'amber' }
+  ];
+  UI.el('statCards').innerHTML = cards.map(function (c) {
+    return '<div class="stat">' +
+             '<div class="stat-ico tone-' + c.tone + '">' + c.icon + '</div>' +
+             '<div><div class="stat-value">' + c.value + '</div>' +
+               '<div class="stat-label">' + UI.esc(c.label) + '</div></div>' +
+           '</div>';
+  }).join('');
+
+  /* ---------------- my courses ---------------- */
+  UI.el('courseCount').textContent = UI.plural(courses.length, 'course');
+  if (!courses.length) {
+    UI.el('courseBox').innerHTML = UI.emptyState('📚', 'No course is assigned to you yet.',
+      'The department admin assigns courses from Faculty Info.');
+  } else {
+    UI.el('courseBox').innerHTML = '<div class="grid grid-2">' + courses.map(function (c) {
+      var students = Store.studentsOfCourse(c).length;
+      var cos = Store.outcomesOf(c.id).length;
+      return '<div class="course-card" style="cursor:default">' +
+        '<div class="code">' + UI.esc(c.code) + '</div>' +
+        '<div class="name">' + UI.esc(c.name) + '</div>' +
+        '<div class="row-wrap mt-1 mb-1" style="gap:6px">' +
+          '<span class="chip">' + UI.esc(Store.semesterLabel(c.semester)) + '</span>' +
+          '<span class="chip">' + UI.plural(students, 'student') + '</span>' +
+          '<span class="chip">' + UI.plural(cos, 'CO') + '</span>' +
+        '</div>' +
+        '<div class="row-wrap mt-2" style="gap:6px">' +
+          '<a class="btn btn-sm" href="outcomes.html?course=' + c.id + '">Outcomes</a>' +
+          '<a class="btn btn-sm" href="co-po-mapping.html?course=' + c.id + '">CO-PO</a>' +
+          '<a class="btn btn-sm" href="questions.html?course=' + c.id + '">Questions</a>' +
+          '<a class="btn btn-sm btn-primary" href="marks.html?course=' + c.id + '">Marks</a>' +
+          '<a class="btn btn-sm" href="attendance.html?course=' + c.id + '">Attendance</a>' +
+          '<a class="btn btn-sm" href="attainment.html?course=' + c.id + '">Attainment</a>' +
+        '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  /* ---------------- notices for me ----------------
+     Department notices, notices for a semester I teach, and notices for
+     one of my own courses. */
+  var myCourseIds = courses.map(function (c) { return c.id; });
+  var notices = Store.all('notices').filter(function (n) {
+    if (n.level === 'department') return true;
+    if (n.level === 'semester') return !!semesterSet[n.semester];
+    if (n.level === 'course') return myCourseIds.indexOf(n.courseId) >= 0;
+    return false;
+  }).sort(function (a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 6);
+
+  var TONE = { department: 'purple', semester: 'cyan', course: 'amber' };
+  UI.el('noticeBox').innerHTML = notices.length ? notices.map(function (n) {
+    var scope = n.level === 'course' ? Store.courseTitle(n.courseId)
+      : n.level === 'semester' ? Store.semesterLabel(n.semester) : 'Whole department';
+    return '<div class="list-row" style="align-items:flex-start">' +
+      '<div style="flex:1">' +
+        '<div class="row-wrap mb-1">' +
+          '<span class="badge tone-' + TONE[n.level] + '">' + UI.esc(n.level) + '</span>' +
+          '<span class="list-title">' + UI.esc(n.title) + '</span>' +
+        '</div>' +
+        '<div class="soft small">' + UI.esc(n.message) + '</div>' +
+        '<div class="list-sub mt-1">' + UI.esc(scope) + ' · ' + UI.date(n.date) + '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('') : UI.emptyState('🔔', 'No notice for you right now.');
+})();
+</script>
+</body>
+</html>

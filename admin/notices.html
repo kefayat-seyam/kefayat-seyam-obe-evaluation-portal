@@ -20,23 +20,25 @@
       <div class="page-head">
         <div>
           <h1>Notices</h1>
-          <div class="sub">Department, semester and course level notices.</div>
+          <div class="sub">Post to the whole department, one semester, or a single course.</div>
         </div>
-        <span class="ro-note">Posting arrives in Visit 3</span>
-      </div>
-
-      <div class="card mb-2">
-        <div class="card-body">
-          <b>Planned for Visit 3 (Group 1, Member 3)</b>
-          <p class="soft mt-1 mb-1">Write, edit, pin and withdraw notices, and post to the
-          central notice board. Students already read these notices from their own
-          dashboard, so the data model below is the one Visit 3 will write to.</p>
-        </div>
+        <button class="btn btn-primary" id="btnAdd">+ New notice</button>
       </div>
 
       <div class="card">
         <div class="card-head">
-          <h2>Posted notices</h2>
+          <div class="row-wrap" style="flex:1">
+            <div class="search">
+              <input class="input" id="q" placeholder="Search title or message…">
+            </div>
+            <select class="select" id="fLevel" style="flex:0 1 190px">
+              <option value="">All levels</option>
+              <option value="department">Department</option>
+              <option value="semester">Semester</option>
+              <option value="course">Course</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btnClear">Clear</button>
+          </div>
           <span class="small muted" id="countLine"></span>
         </div>
         <div class="card-body tight" id="rows"></div>
@@ -45,7 +47,8 @@
       <p class="small muted mt-2">
         Notice model: <code class="mono">{ id, title, message, level, departmentId,
         semester, courseId, date, author }</code> where level is
-        <code class="mono">'department' | 'semester' | 'course'</code>.
+        <code class="mono">'department' | 'semester' | 'course'</code>. Students and faculty
+        read these from their own dashboards.
       </p>
 
     </main>
@@ -62,35 +65,183 @@
 <script>
 (function () {
   'use strict';
+
   var me = Auth.requireRole('admin');
   if (!me) return;
   Shell.mount({ role: 'admin', active: 'notices', title: 'Notices' });
 
+  var dept = Store.department();
+  var semesters = Store.semesters();
   var TONE = { department: 'purple', semester: 'cyan', course: 'amber' };
 
-  var list = Store.all('notices').sort(function (a, b) {
-    return a.date < b.date ? 1 : -1;      // newest first
+  ['q', 'fLevel'].forEach(function (id) {
+    UI.el(id).oninput = draw;
+    UI.el(id).onchange = draw;
   });
-  UI.el('countLine').textContent = UI.plural(list.length, 'notice');
+  UI.el('btnClear').onclick = function () {
+    UI.el('q').value = '';
+    UI.el('fLevel').value = '';
+    draw();
+  };
 
-  UI.el('rows').innerHTML = list.map(function (n) {
-    var scope = n.level === 'course'
-      ? Store.courseTitle(n.courseId)
-      : n.level === 'semester'
-        ? Store.semesterLabel(n.semester)
-        : 'Whole department';
-    return '<div class="list-row" style="align-items:flex-start">' +
-      '<div style="flex:1">' +
-        '<div class="row-wrap mb-1">' +
-          '<span class="badge tone-' + TONE[n.level] + '">' + UI.esc(n.level) + '</span>' +
-          '<span class="list-title">' + UI.esc(n.title) + '</span>' +
+  /* Where a notice is aimed, as a short readable line. */
+  function scopeOf(n) {
+    if (n.level === 'course') return Store.courseTitle(n.courseId);
+    if (n.level === 'semester') return Store.semesterLabel(n.semester);
+    return 'Whole department';
+  }
+
+  function visibleNotices() {
+    var q = UI.el('q').value.trim().toLowerCase();
+    var level = UI.el('fLevel').value;
+    return Store.all('notices').filter(function (n) {
+      if (level && n.level !== level) return false;
+      if (q && (n.title + ' ' + n.message).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });   // newest first
+  }
+
+  function draw() {
+    var list = visibleNotices();
+    var total = Store.all('notices').length;
+    UI.el('countLine').textContent = list.length === total
+      ? UI.plural(total, 'notice')
+      : 'Showing ' + list.length + ' of ' + total + ' notices';
+
+    if (!list.length) {
+      UI.el('rows').innerHTML = UI.emptyState('🔔', 'No notice matches.',
+        'Use "New notice" to post the first one.');
+      return;
+    }
+
+    UI.el('rows').innerHTML = list.map(function (n) {
+      return '<div class="list-row" style="align-items:flex-start">' +
+        '<div style="flex:1">' +
+          '<div class="row-wrap mb-1">' +
+            '<span class="badge tone-' + TONE[n.level] + '">' + UI.esc(n.level) + '</span>' +
+            '<span class="list-title">' + UI.esc(n.title) + '</span>' +
+          '</div>' +
+          '<div class="soft small">' + UI.esc(n.message) + '</div>' +
+          '<div class="list-sub mt-1">' + UI.esc(scopeOf(n)) + ' · ' +
+            UI.esc(n.author || 'Department') + ' · ' + UI.date(n.date) + '</div>' +
         '</div>' +
-        '<div class="soft small">' + UI.esc(n.message) + '</div>' +
-        '<div class="list-sub mt-1">' + UI.esc(scope) + ' · ' + UI.esc(n.author || 'Department') +
-          ' · ' + UI.date(n.date) + '</div>' +
-      '</div>' +
-    '</div>';
-  }).join('') || UI.emptyState('🔔', 'No notice has been posted yet.');
+        '<div class="actions">' +
+          '<button class="btn btn-sm" data-edit="' + n.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + n.id + '" title="Remove">✕</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- create / edit ---------------- */
+  function openForm(noticeId) {
+    var n = noticeId ? Store.get('notices', noticeId) : null;
+    var isNew = !n;
+    if (isNew) n = { title: '', message: '', level: 'department',
+                     semester: semesters[0].id, courseId: '', author: me.name };
+
+    var levelOptions = ['department', 'semester', 'course'].map(function (lv) {
+      return '<option value="' + lv + '"' + (lv === n.level ? ' selected' : '') + '>' +
+             lv.charAt(0).toUpperCase() + lv.slice(1) + '</option>';
+    }).join('');
+
+    var semesterOptions = semesters.map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === n.semester ? ' selected' : '') + '>' +
+             UI.esc(s.label) + '</option>';
+    }).join('');
+
+    var courseOptions = Store.all('courses')
+      .sort(function (a, b) { return a.code < b.code ? -1 : 1; })
+      .map(function (c) {
+        return '<option value="' + c.id + '"' + (c.id === n.courseId ? ' selected' : '') + '>' +
+               UI.esc(c.code + ' — ' + c.name) + '</option>';
+      }).join('');
+
+    UI.modal({
+      title: isNew ? 'New notice' : 'Edit notice',
+      okText: isNew ? 'Post notice' : 'Save changes',
+      wide: true,
+      body:
+        '<div class="field"><label for="nTitle">Title</label>' +
+          '<input class="input" id="nTitle" placeholder="Mid-term routine published" value="' +
+            UI.esc(n.title) + '"></div>' +
+        '<div class="field"><label for="nMsg">Message</label>' +
+          '<textarea class="textarea" id="nMsg" placeholder="Write the announcement…">' +
+            UI.esc(n.message) + '</textarea></div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nLevel">Level</label>' +
+            '<select class="select" id="nLevel">' + levelOptions + '</select></div>' +
+          '<div class="field" id="nSemWrap"><label for="nSem">Semester</label>' +
+            '<select class="select" id="nSem">' + semesterOptions + '</select></div>' +
+          '<div class="field" id="nCourseWrap"><label for="nCourse">Course</label>' +
+            '<select class="select" id="nCourse">' + courseOptions + '</select></div>' +
+        '</div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nAuthor">Posted by</label>' +
+            '<input class="input" id="nAuthor" value="' + UI.esc(n.author || me.name) + '"></div>' +
+          '<div class="field" style="flex:0 1 170px"><label for="nDate">Date</label>' +
+            '<input class="input" id="nDate" type="date" value="' +
+              UI.esc((n.date || UI.today()).slice(0, 10)) + '"></div>' +
+        '</div>' +
+        '<div class="error-text" id="nErr"></div>',
+      onOk: function () {
+        var title = UI.el('nTitle').value.trim();
+        var message = UI.el('nMsg').value.trim();
+        var level = UI.el('nLevel').value;
+        var err = UI.el('nErr');
+        if (!title) { err.textContent = 'A title is required.'; return false; }
+        if (!message) { err.textContent = 'A message is required.'; return false; }
+        if (level === 'course' && !UI.el('nCourse').value) {
+          err.textContent = 'Pick a course for a course-level notice.'; return false;
+        }
+
+        var record = {
+          title: title, message: message, level: level,
+          departmentId: dept.id,
+          semester: level === 'semester' ? UI.el('nSem').value : null,
+          courseId: level === 'course' ? UI.el('nCourse').value : null,
+          date: UI.el('nDate').value || UI.today(),
+          author: UI.el('nAuthor').value.trim() || me.name
+        };
+        if (isNew) { Store.add('notices', record); UI.toast('Notice posted'); }
+        else { Store.update('notices', noticeId, record); UI.toast('Notice saved'); }
+        draw();
+      }
+    });
+
+    /* Only show the picker that matches the chosen level. */
+    function syncLevel() {
+      var lv = UI.el('nLevel').value;
+      UI.el('nSemWrap').style.display = lv === 'semester' ? '' : 'none';
+      UI.el('nCourseWrap').style.display = lv === 'course' ? '' : 'none';
+    }
+    UI.el('nLevel').onchange = syncLevel;
+    syncLevel();
+  }
+
+  /* ---------------- delete ---------------- */
+  function askDelete(noticeId) {
+    var n = Store.get('notices', noticeId);
+    if (!n) return;
+    UI.confirm({
+      title: 'Delete this notice?',
+      message: '"' + n.title + '" will be removed from the board. This cannot be undone.'
+    }, function () {
+      Store.remove('notices', noticeId);
+      UI.toast('Notice deleted');
+      draw();
+    });
+  }
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+  draw();
 })();
 </script>
 </body>

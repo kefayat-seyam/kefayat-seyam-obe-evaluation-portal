@@ -59,7 +59,7 @@
                 <th style="width:132px">Semester</th>
                 <th style="width:72px" class="right">Credits</th>
                 <th style="width:104px">Type</th>
-                <th style="width:170px">Teacher</th>
+                <th style="width:210px">Teachers</th>
                 <th style="width:112px"></th>
               </tr>
             </thead>
@@ -70,8 +70,9 @@
 
       <p class="small muted mt-2">
         Course data model: <code class="mono">{ id, code, name, semester, departmentId,
-        credits, type, optional, facultyId }</code>. Deleting a course also deletes its
-        curriculum, course outcomes, CO-PO mappings and course notices.
+        credits, type, optional, facultyIds }</code>. <code class="mono">facultyIds</code>
+        is a list, so one course can be shared by several teachers. Deleting a course also
+        deletes its curriculum, course outcomes, CO-PO mappings and course notices.
       </p>
 
     </main>
@@ -127,10 +128,13 @@
     var teacher = UI.el('fTeacher').value;
 
     return Store.all('courses').filter(function (c) {
+      // A course carries a LIST of teachers now, so "assigned" simply means
+      // that list is not empty.
+      var teacherCount = (c.facultyIds || []).length;
       if (sem && c.semester !== sem) return false;
       if (type && c.type !== type) return false;
-      if (teacher === 'none' && c.facultyId) return false;
-      if (teacher === 'some' && !c.facultyId) return false;
+      if (teacher === 'none' && teacherCount > 0) return false;
+      if (teacher === 'some' && teacherCount === 0) return false;
       if (q && (c.code + ' ' + c.name).toLowerCase().indexOf(q) < 0) return false;
       return true;
     }).sort(function (a, b) {
@@ -141,10 +145,11 @@
 
   /* ---------------- the table ---------------- */
 
-  function teacherName(facultyId) {
-    if (!facultyId) return '<span class="muted">Not assigned</span>';
-    var user = Store.get('users', facultyId);
-    return user ? UI.esc(user.name) : '<span class="muted">Unknown</span>';
+  /* The Teachers cell. Store.teacherNames gives "A, B" for a shared course
+     and an empty string when nobody is on it yet. */
+  function teacherCell(courseId) {
+    var names = Store.teacherNames(courseId);
+    return names ? UI.esc(names) : '<span class="muted">Not assigned</span>';
   }
 
   function draw() {
@@ -176,7 +181,7 @@
         '<td class="right">' + (c.credits != null ? c.credits.toFixed(2) : '—') + '</td>' +
         '<td><span class="badge tone-' + (c.type === 'theory' ? 'cyan' : 'grey') + '">' +
           UI.esc(c.type) + '</span></td>' +
-        '<td>' + teacherName(c.facultyId) + '</td>' +
+        '<td>' + teacherCell(c.id) + '</td>' +
         '<td><div class="actions">' +
           '<button class="btn btn-sm" data-edit="' + c.id + '">Edit</button>' +
           '<button class="btn btn-sm btn-ghost" data-del="' + c.id + '" title="Delete">✕</button>' +
@@ -200,7 +205,7 @@
     if (isNew) {
       course = {
         code: '', name: '', semester: UI.el('fSemester').value || '1-1',
-        credits: 3, type: 'theory', optional: false, facultyId: ''
+        credits: 3, type: 'theory', optional: false, facultyIds: []
       };
     }
 
@@ -209,11 +214,27 @@
              '>' + UI.esc(s.label) + '</option>';
     }).join('');
 
-    var teacherOptions = '<option value="">Not assigned</option>' +
-      Store.facultyList().map(function (f) {
-        return '<option value="' + f.id + '"' + (f.id === course.facultyId ? ' selected' : '') +
-               '>' + UI.esc(f.name) + '</option>';
-      }).join('');
+    /* One tick box per teacher. Several may be ticked, because a course can
+       be shared. "picked" holds the current ticks while the dialog is open.
+       The list is every teacher — ECE staff plus the external Maths/Physics/
+       Humanities teachers, who take the first-year courses. */
+    var teachers = Store.allFacultyList().sort(function (a, b) {
+      return a.name < b.name ? -1 : 1;
+    });
+    var picked = {};
+    teachers.forEach(function (t) {
+      picked[t.id] = (course.facultyIds || []).indexOf(t.id) >= 0;
+    });
+
+    var teacherBoxes = teachers.length ? teachers.map(function (t) {
+      var from = t.external
+        ? ' <span class="muted small">— ' + UI.esc(t.externalDepartment || 'other department') + '</span>'
+        : '';
+      return '<label class="check-row">' +
+        '<input type="checkbox" data-tt="' + t.id + '"' + (picked[t.id] ? ' checked' : '') + '>' +
+        '<span>' + UI.esc(t.name) + '</span>' + from +
+      '</label>';
+    }).join('') : '<div class="muted small" style="padding:8px">No teacher has been added yet.</div>';
 
     UI.modal({
       title: isNew ? 'New course' : 'Edit ' + course.code,
@@ -243,9 +264,10 @@
               '<option value="sessional"' + (course.type === 'sessional' ? ' selected' : '') + '>Sessional</option>' +
             '</select></div>' +
         '</div>' +
-        '<div class="field"><label for="fFac">Assigned teacher</label>' +
-          '<select class="select" id="fFac">' + teacherOptions + '</select>' +
-          '<div class="hint">Faculty can only edit the courses assigned to them.</div>' +
+        '<div class="field"><label>Assigned teachers</label>' +
+          '<div class="check-list">' + teacherBoxes + '</div>' +
+          '<div class="hint">Tick every teacher who takes this course — a course may be ' +
+            'shared. Faculty can only edit the courses they are on.</div>' +
         '</div>' +
         '<div class="field"><label class="row" style="gap:8px;font-weight:500">' +
           '<input type="checkbox" id="fOpt"' + (course.optional ? ' checked' : '') + '>' +
@@ -277,6 +299,11 @@
           return false;
         }
 
+        // Collect the ticked teachers, in the order they appear in the list.
+        var chosen = teachers
+          .filter(function (t) { return picked[t.id]; })
+          .map(function (t) { return t.id; });
+
         var record = {
           code: code,
           name: name,
@@ -284,11 +311,11 @@
           departmentId: dept.id,
           credits: credits,
           type: UI.el('fKind').value,
-          optional: UI.el('fOpt').checked,
-          facultyId: UI.el('fFac').value || null
+          optional: UI.el('fOpt').checked
         };
 
         if (isNew) {
+          record.facultyIds = chosen;             // the list goes in with the new record
           var created = Store.add('courses', record);
           // Every course gets an (empty) curriculum row so the faculty
           // editor always has something to open.
@@ -299,10 +326,17 @@
           UI.toast(created.code + ' created');
         } else {
           Store.update('courses', course.id, record);
+          // The teacher list is replaced in one go by its own helper.
+          Store.setTeachers(course.id, chosen);
           UI.toast(code + ' saved');
         }
         draw();
       }
+    });
+
+    /* Keep "picked" in step with the tick boxes. */
+    UI.qsa('[data-tt]').forEach(function (cb) {
+      cb.onchange = function () { picked[cb.getAttribute('data-tt')] = cb.checked; };
     });
   }
 

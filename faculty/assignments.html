@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Assignments</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Assignments</h1>
+          <div class="sub">Set the assignments for your own courses. Students read them on their Assignments page.</div>
+        </div>
+        <button class="btn btn-primary" id="btnAdd">+ New assignment</button>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body row-wrap">
+          <div style="flex:1 1 320px">
+            <label class="label" for="cCourse">My course</label>
+            <select class="select" id="cCourse"></select>
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end">
+            <span class="small muted" id="countLine"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="courseName">—</h2>
+          <span class="small muted">earliest due date first</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:240px">Title</th>
+                <th style="width:130px">Due date</th>
+                <th>Description</th>
+                <th style="width:112px"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        Assignment model: <code class="mono">{ id, courseId, title, description, dueDate }</code>.
+        The assignment / quiz / presentation mark out of 10 is entered on the
+        CT &amp; Exam Marks page — this page is only the task list.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'assignments', title: 'Assignments' });
+
+  var COLSPAN = 4;
+
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course assigned to you</option>';
+    UI.el('courseName').textContent = 'No course assigned';
+    UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+      UI.emptyState('📝', 'You have no course to set assignments for yet.',
+        'The department admin assigns courses from Faculty Info.') + '</td></tr>';
+    UI.el('btnAdd').disabled = true;
+    return;
+  }
+
+  // Deep link: assignments.html?course=crs-3
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  function currentCourse() { return Store.get('courses', UI.el('cCourse').value); }
+
+  /* ---------------- the table ---------------- */
+
+  function draw() {
+    var course = currentCourse();
+    var list = Store.assignmentsOf(course.id);
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('countLine').textContent = UI.plural(list.length, 'assignment') + ' set';
+
+    if (!list.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+        UI.emptyState('📝', 'No assignment for this course yet.',
+          'Use "New assignment" above.') + '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = list.map(function (a) {
+      return '<tr>' +
+        '<td class="list-title">' + UI.esc(a.title) + '</td>' +
+        '<td class="small">' + UI.esc(UI.date(a.dueDate)) + '</td>' +
+        '<td class="soft">' + (a.description ? UI.esc(a.description) : '<span class="muted">—</span>') + '</td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-edit="' + a.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + a.id + '" title="Remove">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- add / edit ---------------- */
+
+  function openForm(assignmentId) {
+    var a = assignmentId ? Store.get('assignments', assignmentId) : null;
+    var isNew = !a;
+    if (isNew) a = { title: '', description: '', dueDate: UI.today(), courseId: currentCourse().id };
+
+    var courseOptions = courses.map(function (c) {
+      return '<option value="' + c.id + '"' + (c.id === a.courseId ? ' selected' : '') + '>' +
+             UI.esc(c.code + ' — ' + c.name) + '</option>';
+    }).join('');
+
+    UI.modal({
+      title: isNew ? 'New assignment' : 'Edit assignment',
+      okText: isNew ? 'Add assignment' : 'Save changes',
+      body:
+        '<div class="field"><label for="aTitle">Title</label>' +
+          '<input class="input" id="aTitle" placeholder="Assignment 1 — Nodal analysis" value="' +
+            UI.esc(a.title) + '"></div>' +
+        '<div class="field"><label for="aDesc">Description</label>' +
+          '<textarea class="textarea" id="aDesc" placeholder="Solve problems 3.1 to 3.8 and hand in on paper.">' +
+            UI.esc(a.description || '') + '</textarea></div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="aCourse">Course</label>' +
+            '<select class="select" id="aCourse">' + courseOptions + '</select></div>' +
+          '<div class="field" style="flex:0 1 170px"><label for="aDue">Due date</label>' +
+            '<input class="input" id="aDue" type="date" value="' +
+              UI.esc((a.dueDate || UI.today()).slice(0, 10)) + '"></div>' +
+        '</div>' +
+        '<div class="error-text" id="aErr"></div>',
+      onOk: function () {
+        var title = UI.el('aTitle').value.trim();
+        var err = UI.el('aErr');
+        if (!title) { err.textContent = 'A title is required.'; return false; }
+
+        var record = {
+          courseId: UI.el('aCourse').value,
+          title: title,
+          description: UI.el('aDesc').value.trim(),
+          dueDate: UI.el('aDue').value || null
+        };
+        if (isNew) { Store.add('assignments', record); UI.toast('Assignment added'); }
+        else { Store.update('assignments', assignmentId, record); UI.toast('Assignment saved'); }
+
+        // The teacher may have moved it to another course — follow it there.
+        UI.el('cCourse').value = record.courseId;
+        draw();
+      }
+    });
+  }
+
+  /* ---------------- delete ---------------- */
+
+  function askDelete(assignmentId) {
+    var a = Store.get('assignments', assignmentId);
+    if (!a) return;
+    UI.confirm({
+      title: 'Delete this assignment?',
+      message: '"' + a.title + '" will be removed. This cannot be undone.'
+    }, function () {
+      Store.remove('assignments', assignmentId);
+      UI.toast('Assignment deleted');
+      draw();
+    });
+  }
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Students Info</title>
+<title>Student Rolls</title>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
 <link rel="icon" href="../shared/img/ruet-logo.png">
 <link rel="stylesheet" href="../shared/css/theme.css">
@@ -19,37 +19,44 @@
 
       <div class="page-head">
         <div>
-          <h1>Students Info</h1>
-          <div class="sub">Students are grouped under a series, and a series sits in a semester.</div>
+          <h1>Student Rolls</h1>
+          <div class="sub">Create the logins for a whole batch; each student fills in their own details.</div>
         </div>
-        <span class="ro-note">Editing arrives in Visit 3</span>
+        <div class="row-wrap">
+          <button class="btn" id="btnAddOne">+ Add one student</button>
+          <button class="btn btn-primary" id="btnGenerate">Generate rolls</button>
+        </div>
       </div>
 
-      <div class="card mb-2">
-        <div class="card-body">
-          <b>Planned for Visit 3 (Group 1, Member 2)</b>
-          <p class="soft mt-1 mb-1">Enrol and remove students, bulk-import a roll list,
-          move a series to the next semester, and print section-wise lists. For now the
-          four demo students come from <code class="mono">shared/js/seed-data.js</code>.</p>
-        </div>
-      </div>
+      <!-- ---- summary strip, straight from Store.stats() ---- -->
+      <div class="grid grid-3 mb-2" id="statCards"></div>
 
       <div class="card">
         <div class="card-head">
-          <h2>Enrolled students</h2>
+          <div class="row-wrap" style="flex:1">
+            <select class="select" id="fSeries" style="flex:0 1 240px"></select>
+            <select class="select" id="fStatus" style="flex:0 1 200px">
+              <option value="">All rolls</option>
+              <option value="done">Profile complete</option>
+              <option value="waiting">Waiting for student</option>
+            </select>
+            <div class="search">
+              <input class="input" id="q" placeholder="Search roll, name or login…">
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btnClear">Clear</button>
+          </div>
           <span class="small muted" id="countLine"></span>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" style="max-height:62vh;overflow-y:auto">
           <table class="tbl">
             <thead>
               <tr>
                 <th style="width:104px">Roll</th>
-                <th style="width:200px">Name</th>
-                <th style="width:180px">Series</th>
-                <th style="width:150px">Semester</th>
-                <th style="width:64px" class="center">Sec</th>
-                <th>Email</th>
-                <th style="width:110px" class="right">Courses</th>
+                <th style="width:210px">Name</th>
+                <th style="width:70px" class="center">Section</th>
+                <th>Login ID</th>
+                <th style="width:170px">Status</th>
+                <th style="width:150px"></th>
               </tr>
             </thead>
             <tbody id="rows"></tbody>
@@ -58,9 +65,13 @@
       </div>
 
       <p class="small muted mt-2">
-        Student user model: <code class="mono">{ id, role:'student', name, email, password,
-        roll, seriesId, semester, section, departmentId }</code>. A student is enrolled in
-        every non-optional course of their semester.
+        The head no longer types a student's personal details. Generating a roll range
+        creates one account per roll with the login
+        <code class="mono">&lt;roll&gt;@student.ruet.ac.bd</code> and the password
+        <code class="mono">student123</code>. The student then fills in their own name,
+        section and contact from their dashboard, which flips
+        <code class="mono">profileComplete</code> to true. Removing a student also removes
+        their marks and attendance.
       </p>
 
     </main>
@@ -77,27 +88,345 @@
 <script>
 (function () {
   'use strict';
+
   var me = Auth.requireRole('admin');
   if (!me) return;
-  Shell.mount({ role: 'admin', active: 'students', title: 'Students Info' });
+  Shell.mount({ role: 'admin', active: 'students', title: 'Student Rolls' });
 
-  var list = Store.studentList().sort(function (a, b) {
-    return String(a.roll) < String(b.roll) ? -1 : 1;
+  var dept = Store.department();
+  var semesters = Store.semesters();
+
+  /* ---------------- the series drop-down ----------------
+     Rebuilt after every change so the student counts stay right. */
+  function fillSeriesSelect(keepId) {
+    var list = Store.seriesList();
+    // Default to the newest series (the current intake), where the work is.
+    var wanted = keepId || (list.length ? list[list.length - 1].id : '');
+    UI.el('fSeries').innerHTML = list.map(function (s) {
+      var n = Store.studentsOfSeries(s.id).length;
+      return '<option value="' + s.id + '"' + (s.id === wanted ? ' selected' : '') + '>' +
+             UI.esc(s.name) + ' — ' + UI.plural(n, 'roll') + '</option>';
+    }).join('');
+  }
+  fillSeriesSelect(null);
+
+  ['fSeries', 'fStatus', 'q'].forEach(function (id) {
+    UI.el(id).oninput = draw;
+    UI.el(id).onchange = draw;
   });
-  UI.el('countLine').textContent = UI.plural(list.length, 'student');
+  UI.el('btnClear').onclick = function () {
+    UI.el('q').value = '';
+    UI.el('fStatus').value = '';
+    draw();
+  };
 
-  UI.el('rows').innerHTML = list.map(function (s) {
-    var series = Store.get('series', s.seriesId);
-    return '<tr>' +
-      '<td class="tbl-code">' + UI.esc(s.roll || '—') + '</td>' +
-      '<td>' + UI.esc(s.name) + '</td>' +
-      '<td class="soft">' + UI.esc(series ? series.name : '—') + '</td>' +
-      '<td>' + UI.esc(Store.semesterLabel(s.semester)) + '</td>' +
-      '<td class="center">' + UI.esc(s.section || '—') + '</td>' +
-      '<td class="small mono">' + UI.esc(s.email) + '</td>' +
-      '<td class="right">' + Store.coursesOfStudent(s).length + '</td>' +
-    '</tr>';
-  }).join('');
+  function currentSeriesId() { return UI.el('fSeries').value; }
+
+  /* Options for a series drop-down inside a dialog. */
+  function seriesOptions(selectedId) {
+    return Store.seriesList().map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
+             UI.esc(s.name) + '</option>';
+    }).join('');
+  }
+
+  /* Options for a semester drop-down (1-1 … 4-2). */
+  function semesterOptions(selectedId) {
+    return semesters.map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === selectedId ? ' selected' : '') + '>' +
+             UI.esc(s.label) + '</option>';
+    }).join('');
+  }
+
+  /* ---------------- summary strip ---------------- */
+  function drawStats() {
+    var stats = Store.stats();
+    var done = stats.students - stats.pendingProfiles;
+    var cards = [
+      { label: 'Student rolls', value: stats.students, icon: '🎓', tone: 'green',
+        note: UI.plural(stats.series, 'series', 'series') + ' in the department' },
+      { label: 'Profiles waiting', value: stats.pendingProfiles, icon: '⏳', tone: 'amber',
+        note: 'Students who have not filled in their details' },
+      { label: 'Profiles complete', value: done, icon: '✅', tone: 'blue',
+        note: 'Name and section filled in by the student' }
+    ];
+    UI.el('statCards').innerHTML = cards.map(function (c) {
+      return '<div class="stat">' +
+               '<div class="stat-ico tone-' + c.tone + '">' + c.icon + '</div>' +
+               '<div>' +
+                 '<div class="stat-value">' + c.value + '</div>' +
+                 '<div class="stat-label">' + UI.esc(c.label) + '</div>' +
+                 '<div class="stat-note">' + UI.esc(c.note) + '</div>' +
+               '</div>' +
+             '</div>';
+    }).join('');
+  }
+
+  /* ---------------- the roster ---------------- */
+  function visibleStudents() {
+    var q = UI.el('q').value.trim().toLowerCase();
+    var status = UI.el('fStatus').value;
+    return Store.studentsOfSeries(currentSeriesId()).filter(function (s) {
+      if (status === 'done' && !s.profileComplete) return false;
+      if (status === 'waiting' && s.profileComplete) return false;
+      if (q && ((s.roll || '') + ' ' + (s.name || '') + ' ' + (s.email || ''))
+                 .toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
+  function draw() {
+    drawStats();
+
+    var list = visibleStudents();
+    var inSeries = Store.studentsOfSeries(currentSeriesId());
+    var waiting = inSeries.filter(function (s) { return !s.profileComplete; }).length;
+
+    UI.el('countLine').textContent =
+      (list.length === inSeries.length
+        ? UI.plural(inSeries.length, 'roll')
+        : 'Showing ' + list.length + ' of ' + inSeries.length + ' rolls') +
+      (waiting ? ' · ' + waiting + ' waiting' : '');
+
+    if (!list.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="6">' +
+        UI.emptyState('🎓', 'No roll to show here yet.',
+                      'Use "Generate rolls" to create a whole range at once.') +
+        '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = list.map(function (s) {
+      // A blank name means the student has not logged in and filled it in yet.
+      var nameCell = s.name
+        ? UI.esc(s.name)
+        : '<span class="muted">— not filled in yet —</span>';
+      var pill = s.profileComplete
+        ? '<span class="badge tone-green">Profile complete</span>'
+        : '<span class="badge tone-amber">Waiting for student</span>';
+      return '<tr>' +
+        '<td class="tbl-code">' + UI.esc(s.roll || '—') + '</td>' +
+        '<td>' + nameCell + '</td>' +
+        '<td class="center">' + UI.esc(s.section || '—') + '</td>' +
+        '<td class="small mono">' + UI.esc(s.email || '—') + '</td>' +
+        '<td>' + pill + '</td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-pass="' + s.id + '">Reset password</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + s.id + '" title="Remove">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-pass]').forEach(function (b) {
+      b.onclick = function () { askResetPassword(b.getAttribute('data-pass')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- generate a roll range ----------------
+     This is the main way students get into the app. The head types the
+     first and last roll of a batch and the Store creates one login per
+     roll in between. */
+  function openGenerator() {
+    var series = Store.get('series', currentSeriesId());
+
+    UI.modal({
+      title: 'Generate student rolls',
+      okText: 'Generate',
+      body:
+        '<div class="field-row">' +
+          '<div class="field"><label for="gSeries">Series</label>' +
+            '<select class="select" id="gSeries">' +
+              seriesOptions(series ? series.id : '') + '</select></div>' +
+          '<div class="field"><label for="gSem">Semester</label>' +
+            '<select class="select" id="gSem">' +
+              semesterOptions(series ? series.currentSemester : '1-1') + '</select></div>' +
+        '</div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="gFrom">From roll</label>' +
+            '<input class="input mono" id="gFrom" placeholder="2410001"></div>' +
+          '<div class="field"><label for="gTo">To roll</label>' +
+            '<input class="input mono" id="gTo" placeholder="2410060"></div>' +
+        '</div>' +
+        '<div class="small soft" id="gHint"></div>' +
+        '<div class="small muted mt-1">' +
+          'Each roll becomes one login: <code class="mono">&lt;roll&gt;@student.ruet.ac.bd</code> ' +
+          'with the password <code class="mono">student123</code>. ' +
+          'The student fills in their own name, section and contact from their dashboard. ' +
+          'A roll that already exists is skipped, so running this twice is safe.' +
+        '</div>' +
+        '<div class="error-text" id="gErr"></div>',
+
+      onOk: function () {
+        var err = UI.el('gErr');
+        var result = Store.generateRolls({
+          fromRoll: UI.el('gFrom').value,
+          toRoll: UI.el('gTo').value,
+          seriesId: UI.el('gSeries').value,
+          semester: UI.el('gSem').value,
+          departmentId: dept.id
+        });
+
+        // Store checks the range itself; show whatever it complains about
+        // and keep the dialog open so the head can fix the numbers.
+        if (!result.ok) { err.textContent = result.error; return false; }
+
+        UI.toast(UI.plural(result.created, 'roll') + ' created' +
+                 (result.skipped ? ' · ' + result.skipped + ' already existed' : ''));
+
+        // Follow the series the rolls went into.
+        fillSeriesSelect(UI.el('gSeries').value);
+        draw();
+      }
+    });
+
+    /* A live line under the form saying what is about to happen. */
+    function updateHint() {
+      var from = UI.el('gFrom').value.trim();
+      var to = UI.el('gTo').value.trim();
+      var box = UI.el('gHint');
+      if (!/^\d+$/.test(from) || !/^\d+$/.test(to)) {
+        box.textContent = 'Type the first and last roll of the batch, e.g. 2410001 to 2410060.';
+        return;
+      }
+      var count = parseInt(to, 10) - parseInt(from, 10) + 1;
+      if (count < 1) {
+        box.textContent = 'The last roll must not be smaller than the first.';
+        return;
+      }
+      box.innerHTML = 'This will create ' + UI.plural(count, 'login') + ', from ' +
+        '<span class="mono">' + UI.esc(from) + '@student.ruet.ac.bd</span> to ' +
+        '<span class="mono">' + UI.esc(to) + '@student.ruet.ac.bd</span>.';
+    }
+    UI.el('gFrom').oninput = updateHint;
+    UI.el('gTo').oninput = updateHint;
+    updateHint();
+  }
+
+  /* ---------------- add one student by hand ----------------
+     Kept for the odd readmitted or transferred student. Roll, series and
+     semester only — the name, section and contact are the student's own job,
+     and the login and password are made the same way as a generated roll. */
+  function openAddOne() {
+    var series = Store.get('series', currentSeriesId());
+
+    UI.modal({
+      title: 'Add one student',
+      okText: 'Create roll',
+      body:
+        '<p class="small soft" style="margin-top:0">For a readmitted or transferred ' +
+          'student who is outside the generated range. Everything else works exactly ' +
+          'like a generated roll.</p>' +
+        '<div class="field"><label for="aRoll">Roll</label>' +
+          '<input class="input mono" id="aRoll" placeholder="2410001"></div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="aSeries">Series</label>' +
+            '<select class="select" id="aSeries">' +
+              seriesOptions(series ? series.id : '') + '</select></div>' +
+          '<div class="field"><label for="aSem">Semester</label>' +
+            '<select class="select" id="aSem">' +
+              semesterOptions(series ? series.currentSemester : '1-1') + '</select></div>' +
+        '</div>' +
+        '<div class="field"><label for="aLogin">Login ID</label>' +
+          '<input class="input mono" id="aLogin" readonly ' +
+            'placeholder="&lt;roll&gt;@student.ruet.ac.bd">' +
+          '<div class="hint">Built from the roll. Password ' +
+            '<code class="mono">student123</code>; the student fills in their own ' +
+            'name, section and contact.</div>' +
+        '</div>' +
+        '<div class="error-text" id="aErr"></div>',
+
+      onOk: function () {
+        var roll = UI.el('aRoll').value.trim();
+        var err = UI.el('aErr');
+        if (!roll) { err.textContent = 'A roll number is required.'; return false; }
+
+        // The roll is the student's identity, so it must be unique. The login
+        // ID is built from it, which keeps every login unique too.
+        var clash = Store.where('users', function (u) {
+          return u.role === 'student' && String(u.roll) === roll;
+        })[0];
+        if (clash) {
+          err.textContent = 'Roll ' + roll + ' already exists in the app.';
+          return false;
+        }
+
+        var seriesId = UI.el('aSeries').value;
+        Store.add('users', {
+          role: 'student',
+          departmentId: dept.id,
+          name: '',                                  // the student fills this in
+          email: roll.toLowerCase() + '@student.ruet.ac.bd',
+          password: 'student123',
+          roll: roll,
+          seriesId: seriesId,
+          semester: UI.el('aSem').value,
+          section: '',                               // the student fills this in
+          contact: '',
+          profileComplete: false
+        });
+
+        UI.toast('Roll ' + roll + ' created');
+        fillSeriesSelect(seriesId);
+        draw();
+      }
+    });
+
+    // Show the login ID forming live as the roll is typed.
+    UI.el('aRoll').oninput = function () {
+      var r = UI.el('aRoll').value.trim().toLowerCase();
+      UI.el('aLogin').value = r ? r + '@student.ruet.ac.bd' : '';
+    };
+  }
+
+  /* ---------------- reset a password ----------------
+     A student who forgot their password asks the head, who puts it back to
+     the default. The student can change it again from their own settings. */
+  function askResetPassword(studentId) {
+    var s = Store.get('users', studentId);
+    if (!s) return;
+    UI.confirm({
+      title: 'Reset the password for roll ' + (s.roll || '') + '?',
+      message: 'Their password goes back to student123. They can change it again ' +
+               'from their own settings page.',
+      okText: 'Reset password',
+      danger: false
+    }, function () {
+      Store.update('users', studentId, { password: 'student123' });
+      UI.toast('Password reset to student123');
+    });
+  }
+
+  /* ---------------- delete ---------------- */
+  function askDelete(studentId) {
+    var s = Store.get('users', studentId);
+    if (!s) return;
+    var dep = Store.dependentsOfStudent(studentId);
+    var extras = [];
+    var markCount = dep.ctMarks.length + dep.assessMarks.length +
+                    dep.finalMarks.length + dep.questionMarks.length;
+    if (markCount) extras.push(UI.plural(markCount, 'mark', 'marks'));
+    if (dep.attendance.length) extras.push(UI.plural(dep.attendance.length, 'attendance record'));
+
+    UI.confirm({
+      title: 'Remove roll ' + (s.roll || '') + '?',
+      message: (s.name ? s.name + ' (' + (s.roll || '') + ')' : 'This roll') +
+        ' will be removed' +
+        (extras.length ? ', along with their ' + extras.join(' and ') + '.' : '.') +
+        ' This cannot be undone.'
+    }, function () {
+      Store.removeStudentDeep(studentId);
+      UI.toast('Roll ' + (s.roll || '') + ' removed');
+      fillSeriesSelect(currentSeriesId());
+      draw();
+    });
+  }
+
+  UI.el('btnGenerate').onclick = openGenerator;
+  UI.el('btnAddOne').onclick = openAddOne;
+  draw();
 })();
 </script>
 </body>

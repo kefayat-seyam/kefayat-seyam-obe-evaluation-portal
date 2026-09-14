@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notices</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Notices</h1>
+          <div class="sub">Read department notices, and post notices to your own courses.</div>
+        </div>
+        <button class="btn btn-primary" id="btnAdd">+ New course notice</button>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-head">
+          <h2>From the department</h2>
+          <span class="small muted" id="deptCount"></span>
+        </div>
+        <div class="card-body tight" id="deptBox"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>My course notices</h2>
+          <span class="small muted" id="mineCount"></span>
+        </div>
+        <div class="card-body tight" id="mineBox"></div>
+      </div>
+
+      <p class="small muted mt-2">
+        Faculty post <b>course-level</b> notices for the courses assigned to them.
+        Department and semester notices are posted by the admin and are read-only here.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'notices', title: 'Notices' });
+
+  var dept = Store.department();
+  var TONE = { department: 'purple', semester: 'cyan', course: 'amber' };
+
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+  var myCourseIds = courses.map(function (c) { return c.id; });
+  var mySemesters = {};
+  courses.forEach(function (c) { mySemesters[c.semester] = true; });
+
+  if (!courses.length) UI.el('btnAdd').disabled = true;
+
+  function noticeRow(n, editable) {
+    var scope = n.level === 'course' ? Store.courseTitle(n.courseId)
+      : n.level === 'semester' ? Store.semesterLabel(n.semester) : 'Whole department';
+    return '<div class="list-row" style="align-items:flex-start">' +
+      '<div style="flex:1">' +
+        '<div class="row-wrap mb-1">' +
+          '<span class="badge tone-' + TONE[n.level] + '">' + UI.esc(n.level) + '</span>' +
+          '<span class="list-title">' + UI.esc(n.title) + '</span>' +
+        '</div>' +
+        '<div class="soft small">' + UI.esc(n.message) + '</div>' +
+        '<div class="list-sub mt-1">' + UI.esc(scope) + ' · ' +
+          UI.esc(n.author || 'Department') + ' · ' + UI.date(n.date) + '</div>' +
+      '</div>' +
+      (editable
+        ? '<div class="actions">' +
+            '<button class="btn btn-sm" data-edit="' + n.id + '">Edit</button>' +
+            '<button class="btn btn-sm btn-ghost" data-del="' + n.id + '" title="Remove">✕</button>' +
+          '</div>'
+        : '') +
+    '</div>';
+  }
+
+  function draw() {
+    // department + semester notices for a semester I teach (read-only)
+    var deptNotices = Store.all('notices').filter(function (n) {
+      if (n.level === 'department') return true;
+      if (n.level === 'semester') return !!mySemesters[n.semester];
+      return false;
+    }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+
+    UI.el('deptCount').textContent = UI.plural(deptNotices.length, 'notice');
+    UI.el('deptBox').innerHTML = deptNotices.length
+      ? deptNotices.map(function (n) { return noticeRow(n, false); }).join('')
+      : UI.emptyState('🔔', 'No department notice right now.');
+
+    // my own course notices (editable)
+    var mine = Store.all('notices').filter(function (n) {
+      return n.level === 'course' && myCourseIds.indexOf(n.courseId) >= 0;
+    }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+
+    UI.el('mineCount').textContent = UI.plural(mine.length, 'notice');
+    UI.el('mineBox').innerHTML = mine.length
+      ? mine.map(function (n) { return noticeRow(n, true); }).join('')
+      : UI.emptyState('📢', 'You have not posted any course notice yet.',
+          courses.length ? 'Use "New course notice" above.' : '');
+
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  function openForm(noticeId) {
+    var n = noticeId ? Store.get('notices', noticeId) : null;
+    var isNew = !n;
+    if (isNew) n = { title: '', message: '', courseId: courses[0].id, author: me.name };
+
+    var courseOptions = courses.map(function (c) {
+      return '<option value="' + c.id + '"' + (c.id === n.courseId ? ' selected' : '') + '>' +
+             UI.esc(c.code + ' — ' + c.name) + '</option>';
+    }).join('');
+
+    UI.modal({
+      title: isNew ? 'New course notice' : 'Edit notice',
+      okText: isNew ? 'Post notice' : 'Save changes',
+      body:
+        '<div class="field"><label for="nTitle">Title</label>' +
+          '<input class="input" id="nTitle" placeholder="Lab report deadline moved" value="' +
+            UI.esc(n.title) + '"></div>' +
+        '<div class="field"><label for="nMsg">Message</label>' +
+          '<textarea class="textarea" id="nMsg">' + UI.esc(n.message) + '</textarea></div>' +
+        '<div class="field-row">' +
+          '<div class="field"><label for="nCourse">Course</label>' +
+            '<select class="select" id="nCourse">' + courseOptions + '</select></div>' +
+          '<div class="field" style="flex:0 1 170px"><label for="nDate">Date</label>' +
+            '<input class="input" id="nDate" type="date" value="' +
+              UI.esc((n.date || UI.today()).slice(0, 10)) + '"></div>' +
+        '</div>' +
+        '<div class="error-text" id="nErr"></div>',
+      onOk: function () {
+        var title = UI.el('nTitle').value.trim();
+        var message = UI.el('nMsg').value.trim();
+        var err = UI.el('nErr');
+        if (!title) { err.textContent = 'A title is required.'; return false; }
+        if (!message) { err.textContent = 'A message is required.'; return false; }
+        var record = {
+          title: title, message: message, level: 'course',
+          departmentId: dept.id, semester: null,
+          courseId: UI.el('nCourse').value,
+          date: UI.el('nDate').value || UI.today(),
+          author: me.name
+        };
+        if (isNew) { Store.add('notices', record); UI.toast('Notice posted'); }
+        else { Store.update('notices', noticeId, record); UI.toast('Notice saved'); }
+        draw();
+      }
+    });
+  }
+
+  function askDelete(noticeId) {
+    var n = Store.get('notices', noticeId);
+    if (!n) return;
+    UI.confirm({
+      title: 'Delete this notice?',
+      message: '"' + n.title + '" will be removed. This cannot be undone.'
+    }, function () {
+      Store.remove('notices', noticeId);
+      UI.toast('Notice deleted');
+      draw();
+    });
+  }
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+  draw();
+})();
+</script>
+</body>
+</html>

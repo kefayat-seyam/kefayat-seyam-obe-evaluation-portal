@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CT &amp; Exam Marks</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>CT &amp; Exam Marks</h1>
+          <div class="sub">Four class tests (each /20, best three count), assignment/quiz/presentation (/10) and the final (/60).</div>
+        </div>
+        <button class="btn btn-primary" id="btnSave">Save all marks</button>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body row-wrap">
+          <div style="flex:1 1 320px">
+            <label class="label" for="cCourse">My course</label>
+            <select class="select" id="cCourse"></select>
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end">
+            <span class="small muted" id="classLine"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="courseName">—</h2>
+          <span class="small muted">Total = best 3 CTs (/20) + attendance (/10) + assignment/quiz/presentation (/10) + final (/60)</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr id="headRow"></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        CT model: <code class="mono">{ id, studentId, courseId, testNumber, marks }</code>.
+        A/Q/P model: <code class="mono">{ id, studentId, courseId, marks }</code>.
+        Final model: <code class="mono">{ id, studentId, courseId, marks }</code>.
+        The attendance column is read-only — it comes from the Attendance sheet
+        (percentage ÷ 10). Leaving a box empty means "not taken" and stores nothing.
+      </p>
+
+      <p class="small muted">
+        If you have set up a question paper for a class test (or for the final) on the
+        Question Setup page, that column turns read-only: its total is added up from the
+        question marks instead. Use the <b>enter Q-wise</b> link in the column heading to
+        open the question grid, which is laid out like the department's marks spreadsheet.
+        Papers with no questions keep the simple one-box entry.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'marks', title: 'CT & Exam Marks' });
+
+  var CT_MAX = 20, ASSESS_MAX = 10, FINAL_MAX = 60;
+  var COLSPAN = 10;
+
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course assigned to you</option>';
+    UI.el('courseName').textContent = 'No course assigned';
+    UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+      UI.emptyState('📄', 'You have no course to grade yet.') + '</td></tr>';
+    UI.el('btnSave').disabled = true;
+    return;
+  }
+
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  function currentCourse() { return Store.get('courses', UI.el('cCourse').value); }
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  /* --- which papers are question-wise for the course on screen? --- */
+
+  function ctIsQuestionWise(courseId, testNumber) {
+    return Store.paperHasQuestions(courseId, 'ct' + testNumber);
+  }
+  function finalIsQuestionWise(courseId) {
+    return Store.paperHasQuestions(courseId, 'finalA') ||
+           Store.paperHasQuestions(courseId, 'finalB');
+  }
+
+  /* One class test's value for a student.
+     Question-wise papers are added up from the question marks (read-only);
+     otherwise it is the single number the teacher typed, or '' if none. */
+  function ctValue(studentId, courseId, testNumber) {
+    if (ctIsQuestionWise(courseId, testNumber)) {
+      var score = Store.ctTestScore(studentId, courseId, testNumber);
+      return score === null ? '' : score;
+    }
+    var m = Store.ctMarksFor(studentId, courseId).filter(function (x) {
+      return x.testNumber === testNumber;
+    })[0];
+    return m && typeof m.marks === 'number' ? m.marks : '';
+  }
+
+  /* The final exam value: Part A + Part B when questions exist, else the
+     single typed final mark. */
+  function finalValue(studentId, courseId) {
+    if (finalIsQuestionWise(courseId)) {
+      var score = Store.finalScoreOf(studentId, courseId);
+      return score === null ? '' : score;
+    }
+    var fin = Store.finalMarkFor(studentId, courseId);
+    return fin && typeof fin.marks === 'number' ? fin.marks : '';
+  }
+
+  /* The assignment/quiz/presentation mark (/10), or '' if none. */
+  function assessValue(studentId, courseId) {
+    var m = Store.assessMarkFor(studentId, courseId);
+    return m && typeof m.marks === 'number' ? m.marks : '';
+  }
+
+  /* Attendance turned into a /10 score, the same way courseResult does it
+     (percentage ÷ 10). Read-only here — entered on the Attendance page. */
+  function attScoreFor(studentId, courseId) {
+    var a = Store.attendanceSummary(studentId, courseId);
+    return a.total ? round1(a.pct / 10) : null;
+  }
+
+  /* ---------------- the table ---------------- */
+
+  function draw() {
+    var course = currentCourse();
+    var students = Store.studentsOfCourse(course);
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('classLine').textContent = UI.plural(students.length, 'student') +
+      ' · ' + UI.esc(Store.semesterLabel(course.semester));
+
+    drawHead(course);
+
+    if (!students.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+        UI.emptyState('🎓', 'No student is enrolled in this semester yet.',
+          'The admin enrols students from Students Info.') + '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = students.map(function (s) {
+      var att = attScoreFor(s.id, course.id);
+      return '<tr data-row="' + s.id + '">' +
+        '<td class="tbl-code">' + UI.esc(s.roll || '—') + '</td>' +
+        '<td>' + UI.esc(s.name) + '</td>' +
+        ctCell(course, s.id, 1) + ctCell(course, s.id, 2) +
+        ctCell(course, s.id, 3) + ctCell(course, s.id, 4) +
+        numCell(s.id, 'assess', ASSESS_MAX, assessValue(s.id, course.id), false) +
+        '<td class="center mono soft" data-att="' + s.id + '">' +
+          (att === null ? '—' : att) + '</td>' +
+        numCell(s.id, 'final', FINAL_MAX, finalValue(s.id, course.id),
+                finalIsQuestionWise(course.id)) +
+        '<td class="center mono" data-total="' + s.id + '">—</td>' +
+      '</tr>';
+    }).join('');
+
+    // live totals + recompute on every keystroke
+    UI.qsa('input[data-stu]').forEach(function (inp) {
+      inp.oninput = function () { recompute(inp.getAttribute('data-stu')); };
+    });
+    students.forEach(function (s) { recompute(s.id); });
+  }
+
+  /* The header row is built here rather than in the HTML, because a column
+     gains an "enter Q-wise" link as soon as its paper has questions. */
+  function drawHead(course) {
+    var cells = '<th style="width:96px">Roll</th><th>Name</th>';
+
+    [1, 2, 3, 4].forEach(function (t) {
+      cells += '<th style="width:78px" class="center">CT' + t + ' /20' +
+        (ctIsQuestionWise(course.id, t)
+          ? '<br><a href="#" data-grid="ct' + t + '">enter Q-wise</a>'
+          : '') + '</th>';
+    });
+
+    cells += '<th style="width:86px" class="center">A/Q/P /10</th>';
+    cells += '<th style="width:78px" class="center">Attn /10</th>';
+
+    // The final is two papers, so it can have up to two grid links.
+    var finalLinks = [];
+    if (Store.paperHasQuestions(course.id, 'finalA')) {
+      finalLinks.push('<a href="#" data-grid="finalA">Part A</a>');
+    }
+    if (Store.paperHasQuestions(course.id, 'finalB')) {
+      finalLinks.push('<a href="#" data-grid="finalB">Part B</a>');
+    }
+    cells += '<th style="width:96px" class="center">Final /60' +
+      (finalLinks.length ? '<br>' + finalLinks.join(' · ') : '') + '</th>';
+
+    cells += '<th style="width:86px" class="center">Total /100</th>';
+    UI.el('headRow').innerHTML = cells;
+
+    UI.qsa('#headRow [data-grid]').forEach(function (link) {
+      link.onclick = function (ev) {
+        ev.preventDefault();
+        openGrid(course, link.getAttribute('data-grid'));
+      };
+    });
+  }
+
+  function ctCell(course, studentId, testNumber) {
+    return numCell(studentId, 'ct' + testNumber, CT_MAX,
+      ctValue(studentId, course.id, testNumber),
+      ctIsQuestionWise(course.id, testNumber));
+  }
+
+  function numCell(studentId, key, max, value, readOnly) {
+    return '<td class="center"><input class="input center" style="padding:6px" type="number" ' +
+      'min="0" max="' + max + '" step="0.5" data-stu="' + studentId + '" data-key="' +
+      key + '" value="' + value + '"' +
+      (readOnly ? ' readonly title="Added up from the question marks"' : '') + '></td>';
+  }
+
+  /* Read one row's boxes and show the /100 total, exactly the way
+     Store.courseResult computes it:
+       best 3 of 4 CTs, AVERAGED  -> /20
+       attendance percentage / 10 -> /10   (read-only, from the sheet)
+       assignment/quiz/presentation -> /10
+       final                       -> /60
+     Question-wise boxes are read-only but still hold the number the store
+     would return, so the same arithmetic works for both kinds of column. */
+  function recompute(studentId) {
+    var cts = [1, 2, 3, 4].map(function (t) {
+      return numOrNull(inputFor(studentId, 'ct' + t).value);
+    }).filter(function (v) { return v !== null; });
+    var best3 = cts.slice().sort(function (a, b) { return b - a; }).slice(0, 3);
+    var ctScore = best3.length
+      ? best3.reduce(function (s, v) { return s + v; }, 0) / best3.length
+      : null;
+
+    var att = attScoreFor(studentId, currentCourse().id);
+    var assess = numOrNull(inputFor(studentId, 'assess').value);
+    var fin = numOrNull(inputFor(studentId, 'final').value);
+
+    var totalCell = UI.qs('[data-total="' + studentId + '"]');
+    var hasAny = ctScore !== null || att !== null || assess !== null || fin !== null;
+    if (!hasAny) { totalCell.textContent = '—'; return; }
+    var total = (ctScore || 0) + (att || 0) + (assess || 0) + (fin || 0);
+    totalCell.textContent = round1(total);
+  }
+
+  function inputFor(studentId, key) {
+    return UI.qs('input[data-stu="' + studentId + '"][data-key="' + key + '"]');
+  }
+  function numOrNull(v) {
+    if (String(v).trim() === '') return null;
+    var n = parseFloat(v);
+    return isNaN(n) ? null : n;
+  }
+
+  /* ---------------- question-wise grid ----------------
+     Rows are students, columns are the questions of one paper, exactly like
+     the department's spreadsheet. Each box writes straight into
+     questionMarks, so there is no separate "save" for this grid. */
+
+  function openGrid(course, paper) {
+    var questions = Store.questionsOf(course.id, paper);
+    var students = Store.studentsOfCourse(course);
+
+    if (!questions.length) { UI.toast('That paper has no question', 'error'); return; }
+    if (!students.length) { UI.toast('No student in this class yet', 'error'); return; }
+
+    var head = '<tr><th style="width:90px">Roll</th><th>Name</th>' +
+      questions.map(function (q) {
+        return '<th class="center">Q' + UI.esc(q.qNo) + ' / ' + UI.esc(q.maxMarks) +
+               '<br><span class="small">' + UI.esc(tagLine(q)) + '</span></th>';
+      }).join('') +
+      '<th class="center" style="width:70px">Total</th></tr>';
+
+    var body = students.map(function (s) {
+      return '<tr>' +
+        '<td class="tbl-code">' + UI.esc(s.roll || '—') + '</td>' +
+        '<td>' + UI.esc(s.name || '—') + '</td>' +
+        questions.map(function (q) {
+          var m = Store.questionMarkFor(s.id, q.id);
+          var val = m && typeof m.marks === 'number' ? m.marks : '';
+          return '<td class="center"><input class="input center" style="padding:6px;width:64px" ' +
+            'type="number" min="0" max="' + q.maxMarks + '" step="0.5" ' +
+            'data-qstu="' + s.id + '" data-qid="' + q.id + '" value="' + val + '"></td>';
+        }).join('') +
+        '<td class="center mono" data-qtotal="' + s.id + '">—</td>' +
+      '</tr>';
+    }).join('');
+
+    UI.modal({
+      wide: true,
+      title: Store.paperLabel(paper) + ' · ' + course.code,
+      okText: 'Done',
+      cancelText: 'Close',
+      body:
+        '<p class="small muted">Out of ' + Store.paperOutOf(paper) + ' · the questions here ' +
+          'add up to ' + Store.paperMax(course.id, paper) + '. Marks are saved as you type, ' +
+          'and anything above a question\'s maximum is pulled back down to it.</p>' +
+        '<div class="table-wrap" style="max-height:58vh;overflow:auto">' +
+          '<table class="tbl"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>' +
+        '</div>',
+      onOk: function () { /* nothing to do — every box already saved itself */ },
+      onClose: function () { draw(); }     // the CT / final column may have changed
+    });
+
+    UI.qsa('[data-qstu]').forEach(function (inp) {
+      inp.oninput = function () { cellTyped(course, inp); };
+    });
+    students.forEach(function (s) { gridTotal(questions, s.id); });
+  }
+
+  /** "CO2 · PO9", or every pair when a question carries several. */
+  function tagLine(q) {
+    var tags = q.tags || [];
+    if (!tags.length) return 'no CO/PO';
+    return tags.map(function (t) {
+      var co = t.coId ? Store.get('courseOutcomes', t.coId) : null;
+      var po = t.poId ? Store.get('programOutcomes', t.poId) : null;
+      return (co ? co.code : '?') + ' · ' + (po ? po.code : '?');
+    }).join(', ');
+  }
+
+  /** One box in the grid changed: clamp it, store it, refresh the row total. */
+  function cellTyped(course, inp) {
+    var studentId = inp.getAttribute('data-qstu');
+    var questionId = inp.getAttribute('data-qid');
+    var question = Store.get('questions', questionId);
+    if (!question) return;
+
+    var existing = Store.questionMarkFor(studentId, questionId);
+    var text = String(inp.value).trim();
+
+    if (text === '') {
+      // An empty box means "not marked" — drop the row instead of storing 0.
+      if (existing) Store.remove('questionMarks', existing.id);
+    } else {
+      var n = parseFloat(text);
+      if (isNaN(n)) return;                       // half-typed, e.g. just "-"
+      if (n < 0) { n = 0; inp.value = 0; }
+      if (n > question.maxMarks) { n = question.maxMarks; inp.value = question.maxMarks; }
+      if (existing) {
+        if (existing.marks !== n) Store.update('questionMarks', existing.id, { marks: n });
+      } else {
+        Store.add('questionMarks', {
+          studentId: studentId, courseId: course.id,
+          questionId: questionId, marks: n
+        });
+      }
+    }
+    gridTotal(Store.questionsOf(course.id, question.paper), studentId);
+  }
+
+  /** Add up one student's row in the grid. */
+  function gridTotal(questions, studentId) {
+    var sum = 0, any = false;
+    questions.forEach(function (q) {
+      var box = UI.qs('input[data-qstu="' + studentId + '"][data-qid="' + q.id + '"]');
+      if (!box) return;
+      var n = parseFloat(box.value);
+      if (!isNaN(n)) { sum += n; any = true; }
+    });
+    var cell = UI.qs('[data-qtotal="' + studentId + '"]');
+    if (cell) cell.textContent = any ? round1(sum) : '—';
+  }
+
+  /* ---------------- save everything ---------------- */
+
+  /* Upsert one "one row per student/course" mark (assess or final). */
+  function saveSingle(collection, findExisting, studentId, courseId, val) {
+    var existing = findExisting(studentId, courseId);
+    if (val === null) {
+      if (existing) { Store.remove(collection, existing.id); return 1; }
+      return 0;
+    }
+    if (existing) {
+      if (existing.marks !== val) { Store.update(collection, existing.id, { marks: val }); return 1; }
+      return 0;
+    }
+    Store.add(collection, { studentId: studentId, courseId: courseId, marks: val });
+    return 1;
+  }
+
+  function save() {
+    var course = currentCourse();
+    var students = Store.studentsOfCourse(course);
+    var problems = 0, changed = 0;
+
+    students.forEach(function (s) {
+      // four class tests — a question-wise test is read-only and skipped,
+      // its marks already live in questionMarks.
+      [1, 2, 3, 4].forEach(function (test) {
+        if (ctIsQuestionWise(course.id, test)) return;
+        var val = numOrNull(inputFor(s.id, 'ct' + test).value);
+        if (val !== null && (val < 0 || val > CT_MAX)) { problems += 1; return; }
+        var existing = Store.ctMarksFor(s.id, course.id).filter(function (x) {
+          return x.testNumber === test;
+        })[0];
+        if (val === null) {
+          if (existing) { Store.remove('ctMarks', existing.id); changed += 1; }
+        } else if (existing) {
+          if (existing.marks !== val) { Store.update('ctMarks', existing.id, { marks: val }); changed += 1; }
+        } else {
+          Store.add('ctMarks', { studentId: s.id, courseId: course.id, testNumber: test, marks: val });
+          changed += 1;
+        }
+      });
+
+      // assignment / quiz / presentation (one per student/course, out of 10)
+      var assessVal = numOrNull(inputFor(s.id, 'assess').value);
+      if (assessVal !== null && (assessVal < 0 || assessVal > ASSESS_MAX)) { problems += 1; }
+      else { changed += saveSingle('assessMarks', Store.assessMarkFor, s.id, course.id, assessVal); }
+
+      // final exam (one per student/course, out of 60) — also skipped when
+      // the final is entered question-wise.
+      if (!finalIsQuestionWise(course.id)) {
+        var finVal = numOrNull(inputFor(s.id, 'final').value);
+        if (finVal !== null && (finVal < 0 || finVal > FINAL_MAX)) { problems += 1; }
+        else { changed += saveSingle('finalMarks', Store.finalMarkFor, s.id, course.id, finVal); }
+      }
+    });
+
+    if (problems) {
+      UI.toast(problems + ' value(s) out of range were skipped', 'error');
+    } else {
+      UI.toast(changed ? 'Marks saved' : 'Nothing to change');
+    }
+    draw();
+  }
+
+  UI.el('btnSave').onclick = save;
+  draw();
+})();
+</script>
+</body>
+</html>

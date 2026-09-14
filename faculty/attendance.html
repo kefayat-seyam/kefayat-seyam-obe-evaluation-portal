@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attendance</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Attendance</h1>
+          <div class="sub">Take the roll for one course on one day.</div>
+        </div>
+        <div class="row-wrap">
+          <button class="btn" id="btnAllPresent">Mark all present</button>
+          <button class="btn btn-primary" id="btnSave">Save attendance</button>
+        </div>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body row-wrap">
+          <div style="flex:1 1 300px">
+            <label class="label" for="cCourse">My course</label>
+            <select class="select" id="cCourse"></select>
+          </div>
+          <div style="flex:0 1 190px">
+            <label class="label" for="cDate">Date</label>
+            <input class="input" id="cDate" type="date">
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end">
+            <span class="small muted" id="classLine"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="courseName">—</h2>
+          <span class="small muted">A late day counts as half-present in the percentage.</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:104px">Roll</th>
+                <th>Name</th>
+                <th style="width:260px" class="center">This day</th>
+                <th style="width:150px" class="right">Term to date</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        Attendance model: <code class="mono">{ id, studentId, courseId, date, status }</code>
+        where status is <code class="mono">'present' | 'late' | 'absent'</code>.
+        One row per student per day; saving again updates that day.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'attendance', title: 'Attendance' });
+
+  var STATUSES = ['present', 'late', 'absent'];
+
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course assigned to you</option>';
+    UI.el('courseName').textContent = 'No course assigned';
+    UI.el('rows').innerHTML = '<tr><td colspan="4">' +
+      UI.emptyState('📅', 'You have no course to take attendance for yet.') + '</td></tr>';
+    UI.el('btnSave').disabled = true;
+    UI.el('btnAllPresent').disabled = true;
+    return;
+  }
+
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+
+  UI.el('cCourse').onchange = function () { pickLatestDate(); draw(); };
+  UI.el('cDate').onchange = draw;
+
+  function currentCourse() { return Store.get('courses', UI.el('cCourse').value); }
+
+  /* Open the date on the most recent day that already has records for this
+     course, so the seeded history is visible; otherwise open on today. */
+  function pickLatestDate() {
+    var rows = Store.attendanceOf(currentCourse().id);
+    var latest = rows.map(function (r) { return r.date; })
+      .sort().slice(-1)[0];
+    UI.el('cDate').value = latest || UI.today();
+  }
+
+  function statusOn(studentId, courseId, date) {
+    var row = Store.attendanceFor(studentId, courseId).filter(function (r) {
+      return r.date === date;
+    })[0];
+    return row ? row.status : 'present';
+  }
+
+  function draw() {
+    var course = currentCourse();
+    var date = UI.el('cDate').value || UI.today();
+    var students = Store.studentsOfCourse(course);
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('classLine').textContent = UI.plural(students.length, 'student') +
+      ' · ' + UI.esc(Store.semesterLabel(course.semester));
+
+    if (!students.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="4">' +
+        UI.emptyState('🎓', 'No student is enrolled in this semester yet.') + '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = students.map(function (s) {
+      var cur = statusOn(s.id, course.id, date);
+      var sum = Store.attendanceSummary(s.id, course.id);
+      var seg = STATUSES.map(function (st) {
+        return '<label class="seg-opt' + (st === cur ? ' is-on' : '') + '">' +
+          '<input type="radio" name="att-' + s.id + '" value="' + st + '" data-stu="' + s.id + '"' +
+            (st === cur ? ' checked' : '') + '>' +
+          st.charAt(0).toUpperCase() + st.slice(1) + '</label>';
+      }).join('');
+      return '<tr>' +
+        '<td class="tbl-code">' + UI.esc(s.roll || '—') + '</td>' +
+        '<td>' + UI.esc(s.name) + '</td>' +
+        '<td class="center"><div class="seg" data-seg="' + s.id + '">' + seg + '</div></td>' +
+        '<td class="right small">' + (sum.total
+          ? sum.pct + '% · ' + sum.present + 'P / ' + sum.late + 'L / ' + sum.absent + 'A'
+          : '<span class="muted">no record</span>') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    // clicking a segment highlights it
+    UI.qsa('input[type="radio"][data-stu]').forEach(function (r) {
+      r.onchange = function () {
+        UI.qsa('.seg-opt', r.closest('.seg')).forEach(function (lab) {
+          lab.classList.toggle('is-on', lab.querySelector('input').checked);
+        });
+      };
+    });
+  }
+
+  function chosenStatus(studentId) {
+    var r = UI.qs('input[name="att-' + studentId + '"]:checked');
+    return r ? r.value : 'present';
+  }
+
+  UI.el('btnAllPresent').onclick = function () {
+    UI.qsa('.seg').forEach(function (seg) {
+      var first = UI.qs('input[value="present"]', seg);
+      if (first) { first.checked = true; first.onchange(); }
+    });
+  };
+
+  function save() {
+    var course = currentCourse();
+    var date = UI.el('cDate').value || UI.today();
+    var students = Store.studentsOfCourse(course);
+    var changed = 0;
+
+    students.forEach(function (s) {
+      var status = chosenStatus(s.id);
+      var existing = Store.attendanceFor(s.id, course.id).filter(function (r) {
+        return r.date === date;
+      })[0];
+      if (existing) {
+        if (existing.status !== status) { Store.update('attendance', existing.id, { status: status }); changed += 1; }
+      } else {
+        Store.add('attendance', { studentId: s.id, courseId: course.id, date: date, status: status });
+        changed += 1;
+      }
+    });
+
+    UI.toast(changed ? ('Attendance saved for ' + UI.date(date)) : 'Nothing to change');
+    draw();
+  }
+
+  UI.el('btnSave').onclick = save;
+  pickLatestDate();
+  draw();
+})();
+</script>
+</body>
+</html>

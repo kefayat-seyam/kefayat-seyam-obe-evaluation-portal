@@ -28,7 +28,7 @@
         </div>
       </div>
 
-      <!-- ---- the three headline numbers Step 1.1 asks for, plus credits ---- -->
+      <!-- ---- the headline numbers of the department ---- -->
       <div class="grid grid-4 mb-2" id="statCards"></div>
 
       <div class="grid grid-2 mb-2">
@@ -84,12 +84,18 @@
   UI.el('deptLine').textContent =
     dept.name + ' · ' + dept.university + ' · session ' + dept.session;
 
-  /* ---------------- headline stat cards ---------------- */
+  /* ---------------- headline stat cards ----------------
+     A course can be shared by several teachers now, and students arrive as
+     generated rolls, so two extra tiles say where the gaps are. */
   var cards = [
-    { label: 'Total faculty',  value: stats.faculty,  icon: '👤', tone: 'blue',
-      note: stats.assignedCourses + ' courses assigned' },
+    { label: 'Department faculty', value: stats.faculty, icon: '👤', tone: 'blue',
+      note: stats.assignedCourses + ' of ' + stats.courses + ' courses assigned' },
+    { label: 'External faculty', value: stats.externalFaculty, icon: '🌐', tone: 'cyan',
+      note: 'Maths, Physics and Humanities teachers' },
     { label: 'Total students', value: stats.students, icon: '🎓', tone: 'green',
       note: stats.series + ' active series' },
+    { label: 'Profiles waiting', value: stats.pendingProfiles, icon: '⏳', tone: 'amber',
+      note: 'Students yet to fill in their own details' },
     { label: 'Total courses',  value: stats.courses,  icon: '📚', tone: 'amber',
       note: stats.credits + ' credit hours' },
     { label: 'Program outcomes', value: stats.programOutcomes, icon: '🎯', tone: 'purple',
@@ -113,8 +119,9 @@
   var descriptions = {
     courses:  'Create, edit and delete the courses offered by the department.',
     copo:     'Define program outcomes and the course outcomes of every course.',
-    faculty:  'Add teachers and assign them to courses.',
-    students: 'Enrol students under a series and semester.',
+    faculty:  'Add teachers and put them on courses — a course may be shared.',
+    external: 'Maths, Physics and Humanities teachers from other departments.',
+    students: 'Generate the roll range of a batch; students fill in their own details.',
     series:   'Open and close series and semesters.',
     notices:  'Post department, semester and course level notices.'
   };
@@ -150,7 +157,9 @@
 
   UI.el('progressBox').innerHTML =
     meter('Courses with COs', stats.coursesWithOutcomes, stats.courses, 'blue') +
-    meter('Courses assigned', stats.assignedCourses, stats.courses, 'green') +
+    meter('Courses with a teacher', stats.assignedCourses, stats.courses, 'green') +
+    meter('Student profiles filled in', stats.students - stats.pendingProfiles,
+          stats.students, 'amber') +
     meter('POs defined', stats.programOutcomes, 12, 'purple') +
     '<div class="small muted mt-2">' + stats.mappings + ' CO-PO mappings recorded so far. ' +
       'Faculty add mappings from their own dashboard.</div>';

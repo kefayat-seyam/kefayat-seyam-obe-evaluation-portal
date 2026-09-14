@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CO / PO Attainment</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>CO / PO Attainment</h1>
+          <div class="sub">How much of your class reached each course outcome and each program outcome.</div>
+        </div>
+      </div>
+
+      <p class="small muted">
+        Every question you set up carries one or more CO / PO tags with a share of its
+        marks. A student who scores, say, 60% of a question is credited with 60% of each
+        of that question's tag marks. Adding those up per outcome gives the student a
+        <i>got / max</i> figure; when their percentage reaches the course threshold they
+        have <b>attained</b> that outcome. The class figure is simply the percentage of
+        examined students who attained it.
+      </p>
+
+      <div class="card mb-2">
+        <div class="card-body row-wrap">
+          <div style="flex:1 1 320px">
+            <label class="label" for="cCourse">My course</label>
+            <select class="select" id="cCourse"></select>
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end">
+            <span class="small muted" id="thresholdLine"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-head">
+          <h2 id="courseName">—</h2>
+          <span class="ro-note">Report only · nothing is edited here</span>
+        </div>
+        <div class="card-body" id="reportBox"></div>
+      </div>
+
+      <div class="grid grid-2 mb-2">
+        <div class="card">
+          <div class="card-head">
+            <h2>Course outcomes</h2>
+            <span class="small muted" id="coSummaryCount"></span>
+          </div>
+          <div class="table-wrap" id="coSummaryBox"></div>
+          <div class="card-body small muted" id="coSummaryNote"></div>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h2>Program outcomes</h2>
+            <span class="small muted" id="poSummaryCount"></span>
+          </div>
+          <div class="table-wrap" id="poSummaryBox"></div>
+          <div class="card-body small muted" id="poSummaryNote"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Student by student</h2>
+          <span class="small muted" id="studentCount"></span>
+        </div>
+        <div class="table-wrap" id="studentBox"></div>
+      </div>
+
+      <p class="small muted mt-2">
+        The thresholds live on the course record as
+        <code class="mono">coThreshold</code> and <code class="mono">poThreshold</code>
+        (60% by default). Only outcomes that were actually examined appear here.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'attainment', title: 'CO / PO Attainment' });
+
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course assigned to you</option>';
+    UI.el('courseName').textContent = 'No course assigned';
+    UI.el('reportBox').innerHTML = UI.emptyState('📊', 'You have no course to report on yet.');
+    return;
+  }
+
+  // Deep link: attainment.html?course=crs-3
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  function currentCourse() { return Store.get('courses', UI.el('cCourse').value); }
+
+  /* ---------------- draw the whole report ---------------- */
+
+  function draw() {
+    var course = currentCourse();
+    var report = Store.attainmentOf(course.id);
+    var questions = Store.questionsOfCourse(course.id);
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('thresholdLine').textContent =
+      'CO threshold ' + report.coThreshold + '% · PO threshold ' + report.poThreshold + '%';
+
+    // Nothing to report on until the teacher has set up question papers.
+    if (!questions.length) {
+      showNothing(UI.emptyState('📝', 'No question paper is set up for this course yet.',
+        'Open Question Setup, list the questions of a class test, and tag each one ' +
+        'with the CO and PO it examines.') +
+        '<div class="center"><a class="btn btn-sm btn-primary" href="questions.html?course=' +
+        course.id + '">Open Question Setup</a></div>');
+      return;
+    }
+
+    if (!report.co.length && !report.po.length) {
+      showNothing(UI.emptyState('🏷️', 'The questions have no CO / PO tags yet.',
+        'Edit each question in Question Setup and give its marks to a CO and a PO.'));
+      return;
+    }
+
+    // A short summary of what the report is built from.
+    UI.el('reportBox').innerHTML =
+      '<div class="row-wrap">' +
+        '<span class="chip">' + UI.plural(questions.length, 'question') + ' tagged</span>' +
+        '<span class="chip">' + UI.plural(report.students.length, 'student') + ' in the class</span>' +
+        '<span class="chip">' + UI.plural(report.co.length, 'CO') + ' examined</span>' +
+        '<span class="chip">' + UI.plural(report.po.length, 'PO') + ' examined</span>' +
+      '</div>';
+
+    drawSummary('coSummaryBox', 'coSummaryCount', 'coSummaryNote',
+                report.co, report.coThreshold, 'Course outcome');
+    drawSummary('poSummaryBox', 'poSummaryCount', 'poSummaryNote',
+                report.po, report.poThreshold, 'Program outcome');
+    drawStudents(report);
+  }
+
+  /** Used for both "no questions" and "no tags": clear everything and say why. */
+  function showNothing(html) {
+    UI.el('reportBox').innerHTML = html;
+    UI.el('coSummaryBox').innerHTML = '';
+    UI.el('poSummaryBox').innerHTML = '';
+    UI.el('coSummaryNote').innerHTML = '';
+    UI.el('poSummaryNote').innerHTML = '';
+    UI.el('studentBox').innerHTML = '';
+    UI.el('coSummaryCount').textContent = '';
+    UI.el('poSummaryCount').textContent = '';
+    UI.el('studentCount').textContent = '';
+  }
+
+  /* ---------------- the two class-level tables ---------------- */
+
+  function drawSummary(boxId, countId, noteId, rows, threshold, heading) {
+    var metCount = rows.filter(function (r) { return r.met; }).length;
+    UI.el(countId).textContent = metCount + ' of ' + rows.length + ' met';
+    UI.el(noteId).textContent = 'Met means at least ' + threshold +
+      '% of the students who sat it attained it.';
+
+    if (!rows.length) {
+      UI.el(boxId).innerHTML = UI.emptyState('🎯', 'Nothing examined yet.');
+      return;
+    }
+
+    UI.el(boxId).innerHTML =
+      '<table class="tbl"><thead><tr>' +
+        '<th>' + UI.esc(heading) + '</th>' +
+        '<th style="width:72px" class="center">Sat</th>' +
+        '<th style="width:88px" class="center">Attained</th>' +
+        '<th style="width:72px" class="center">%</th>' +
+        '<th style="width:92px" class="center">Result</th>' +
+      '</tr></thead><tbody>' +
+      rows.map(function (r) {
+        var o = r.outcome;
+        return '<tr>' +
+          '<td><span class="badge tone-blue">' + UI.esc(o.code) + '</span> ' +
+            UI.esc(o.title || shorten(o.description)) + '</td>' +
+          '<td class="center mono">' + r.counted + '</td>' +
+          '<td class="center mono">' + r.attained + '</td>' +
+          '<td class="center mono">' + r.pct + '%</td>' +
+          '<td class="center"><span class="badge tone-' + (r.met ? 'green' : 'red') + '">' +
+            (r.met ? 'Met' : 'Not met') + '</span></td>' +
+        '</tr>';
+      }).join('') +
+      '</tbody></table>';
+  }
+
+  /** Long CO statements would stretch the table, so trim them for display. */
+  function shorten(text) {
+    text = String(text || '');
+    return text.length > 60 ? text.slice(0, 57) + '…' : text;
+  }
+
+  /* ---------------- per-student table ----------------
+     One column per CO that was actually examined. Each cell shows what the
+     student earned out of what was on offer for that outcome. */
+
+  function drawStudents(report) {
+    var outcomes = report.co.map(function (r) { return r.outcome; });
+    UI.el('studentCount').textContent =
+      UI.plural(report.students.length, 'student') + ' · one column per CO';
+
+    if (!report.students.length) {
+      UI.el('studentBox').innerHTML = UI.emptyState('🎓',
+        'No student is enrolled in this semester yet.');
+      return;
+    }
+
+    var head = '<tr><th style="width:96px">Roll</th><th>Name</th>' +
+      outcomes.map(function (co) {
+        return '<th class="center" title="' + UI.esc(co.title || co.description) + '">' +
+               UI.esc(co.code) + '</th>';
+      }).join('') + '</tr>';
+
+    var body = report.students.map(function (row) {
+      return '<tr>' +
+        '<td class="tbl-code">' + UI.esc(row.student.roll || '—') + '</td>' +
+        '<td>' + UI.esc(row.student.name || '—') + '</td>' +
+        outcomes.map(function (co) {
+          var cell = row.co[co.id];
+          if (!cell || !cell.max) return '<td class="center muted">—</td>';
+          return '<td class="center">' +
+            '<div class="mono small">' + cell.got + ' / ' + cell.max + '</div>' +
+            '<span class="badge tone-' + (cell.attained ? 'green' : 'red') + '">' +
+              cell.pct + '%</span>' +
+          '</td>';
+        }).join('') +
+      '</tr>';
+    }).join('');
+
+    UI.el('studentBox').innerHTML =
+      '<table class="tbl"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>

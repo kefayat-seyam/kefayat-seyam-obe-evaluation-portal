@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Course Outcomes</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>Course Outcomes</h1>
+          <div class="sub">Write what a student should be able to do after passing your course.</div>
+        </div>
+        <button class="btn btn-primary" id="btnAdd">+ Add course outcome</button>
+      </div>
+
+      <p class="small muted">
+        These are the outcomes your students read on their own Course Outcomes page,
+        the rows of the CO-PO matrix, and the list you tag exam questions against.
+        Keep each one short and start with an action verb.
+      </p>
+
+      <div class="card mb-2">
+        <div class="card-body row-wrap">
+          <div style="flex:1 1 320px">
+            <label class="label" for="cCourse">My course</label>
+            <select class="select" id="cCourse"></select>
+          </div>
+          <div style="flex:0 0 auto;align-self:flex-end">
+            <span class="small muted" id="coCount"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="courseName">—</h2>
+          <span class="small muted">CO1, CO2 … in order</span>
+        </div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:64px">Code</th>
+                <th style="width:210px">Title</th>
+                <th>Description</th>
+                <th style="width:112px"></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="small muted mt-2">
+        CO model: <code class="mono">{ id, courseId, code, title, description }</code>.
+        Deleting a CO also deletes the CO-PO mappings that used it.
+      </p>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('faculty');
+  if (!me) return;
+  Shell.mount({ role: 'faculty', active: 'outcomes', title: 'Course Outcomes' });
+
+  var COLSPAN = 4;
+
+  // A course can have several teachers now, so we ask the store which
+  // courses carry my id inside their facultyIds list.
+  var courses = Store.coursesOfFaculty(me.id)
+    .sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+
+  if (!courses.length) {
+    UI.el('cCourse').innerHTML = '<option value="">No course assigned to you</option>';
+    UI.el('courseName').textContent = 'No course assigned';
+    UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+      UI.emptyState('📌', 'You have no course to write outcomes for yet.',
+        'The department admin assigns courses from Faculty Info.') + '</td></tr>';
+    UI.el('btnAdd').disabled = true;
+    return;
+  }
+
+  // Deep link: outcomes.html?course=crs-3, otherwise the first course.
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = draw;
+
+  function currentCourse() { return Store.get('courses', UI.el('cCourse').value); }
+
+  /* ---------------- the table ---------------- */
+
+  function draw() {
+    var course = currentCourse();
+    var outcomes = Store.outcomesOf(course.id);
+
+    UI.el('courseName').textContent = course.code + ' — ' + course.name;
+    UI.el('coCount').textContent = UI.plural(outcomes.length, 'course outcome') + ' written';
+
+    if (!outcomes.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="' + COLSPAN + '">' +
+        UI.emptyState('📌', 'This course has no course outcome yet.',
+          'Use "Add course outcome" to write CO1.') + '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = outcomes.map(function (co) {
+      return '<tr>' +
+        '<td><span class="badge tone-blue">' + UI.esc(co.code) + '</span></td>' +
+        '<td>' + (co.title ? UI.esc(co.title) : '<span class="muted">—</span>') + '</td>' +
+        '<td class="soft">' + UI.esc(co.description) + '</td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-edit="' + co.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + co.id + '" title="Remove">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- add / edit ---------------- */
+
+  function openForm(coId) {
+    var course = currentCourse();
+    var co = coId ? Store.get('courseOutcomes', coId) : null;
+    var isNew = !co;
+    // A new CO gets the next free code (CO1, CO2, ...) suggested for it.
+    if (isNew) co = { code: Store.nextOutcomeCode(course.id), title: '', description: '' };
+
+    UI.modal({
+      title: (isNew ? 'New course outcome · ' : 'Edit ' + co.code + ' · ') + course.code,
+      okText: isNew ? 'Add outcome' : 'Save changes',
+      body:
+        '<div class="field-row">' +
+          '<div class="field" style="flex:0 1 120px"><label for="oCode">Code</label>' +
+            '<input class="input mono" id="oCode" value="' + UI.esc(co.code) + '"></div>' +
+          '<div class="field" style="flex:2 1 240px"><label for="oTitle">Title</label>' +
+            '<input class="input" id="oTitle" placeholder="Network theorems" value="' +
+              UI.esc(co.title || '') + '"></div>' +
+        '</div>' +
+        '<div class="field"><label for="oDesc">Description</label>' +
+          '<textarea class="textarea" id="oDesc" placeholder="Apply Kirchhoff’s laws to solve…">' +
+            UI.esc(co.description) + '</textarea>' +
+          '<div class="hint">Start with an action verb the student can be assessed on ' +
+            '(explain, apply, analyse, design…).</div></div>' +
+        '<div class="error-text" id="oErr"></div>',
+      onOk: function () {
+        var code = UI.el('oCode').value.trim().toUpperCase().replace(/\s+/g, '');
+        var title = UI.el('oTitle').value.trim();
+        var desc = UI.el('oDesc').value.trim();
+        var err = UI.el('oErr');
+
+        if (!code) { err.textContent = 'A code is required, e.g. CO1.'; return false; }
+        if (!/^CO\d+$/.test(code)) { err.textContent = 'Use a code like CO1, CO2 …'; return false; }
+        if (!desc) { err.textContent = 'A description is required.'; return false; }
+
+        // Two COs of the same course must not share a code.
+        var clash = Store.where('courseOutcomes', function (x) {
+          return x.courseId === course.id && x.code === code && x.id !== co.id;
+        })[0];
+        if (clash) { err.textContent = code + ' already exists for ' + course.code + '.'; return false; }
+
+        if (isNew) {
+          Store.add('courseOutcomes', {
+            courseId: course.id, code: code, title: title, description: desc
+          });
+        } else {
+          Store.update('courseOutcomes', co.id, { code: code, title: title, description: desc });
+        }
+        UI.toast(code + (isNew ? ' added' : ' saved'));
+        draw();
+      }
+    });
+  }
+
+  /* ---------------- delete ---------------- */
+
+  function askDelete(coId) {
+    var co = Store.get('courseOutcomes', coId);
+    if (!co) return;
+    var mappings = Store.where('coPoMappings', function (m) { return m.coId === coId; });
+    UI.confirm({
+      title: 'Delete ' + co.code + '?',
+      message: mappings.length
+        ? 'Its ' + UI.plural(mappings.length, 'PO mapping') + ' will be deleted as well. ' +
+          'Any exam question tagged with it keeps its marks but loses this outcome.'
+        : 'This course outcome will be removed.'
+    }, function () {
+      // removeOutcomeDeep also clears the CO-PO mappings, so nothing is
+      // left pointing at an outcome that has gone.
+      Store.removeOutcomeDeep(coId);
+      UI.toast(co.code + ' deleted');
+      draw();
+    });
+  }
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+  draw();
+})();
+</script>
+</body>
+</html>

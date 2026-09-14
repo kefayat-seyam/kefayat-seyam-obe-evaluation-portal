@@ -20,19 +20,9 @@
       <div class="page-head">
         <div>
           <h1>Series / Semester</h1>
-          <div class="sub">A series is an admission batch; it moves through the eight semesters.</div>
+          <div class="sub">A series is an admission batch; each series plans its courses semester by semester.</div>
         </div>
-        <span class="ro-note">Editing arrives in Visit 3</span>
-      </div>
-
-      <div class="card mb-2">
-        <div class="card-body">
-          <b>Planned for Visit 3 (Group 1, Member 2)</b>
-          <p class="soft mt-1 mb-1">Create a new series each session, promote a series to
-          the next semester, and close a series once it graduates. The eight semesters
-          themselves are fixed by the syllabus and are defined in
-          <code class="mono">shared/js/seed-data.js</code>.</p>
-        </div>
+        <button class="btn btn-primary" id="btnAddSeries">+ New series</button>
       </div>
 
       <div class="grid grid-2">
@@ -42,27 +32,35 @@
         </div>
 
         <div class="card">
-          <div class="card-head"><h2>Semesters</h2><span class="small muted">fixed structure</span></div>
-          <div class="table-wrap">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th style="width:64px">Id</th>
-                  <th>Label</th>
-                  <th style="width:84px" class="right">Courses</th>
-                  <th style="width:84px" class="right">Credits</th>
-                </tr>
-              </thead>
-              <tbody id="semRows"></tbody>
-            </table>
+          <div class="card-head">
+            <h2 id="planTitle">Semester plans</h2>
+            <button class="btn btn-sm btn-primary" id="btnAddPlan">+ Add semester</button>
           </div>
+          <div class="card-body tight" id="planRows"></div>
+        </div>
+      </div>
+
+      <div class="card mt-2">
+        <div class="card-head"><h2>Semester structure</h2><span class="small muted">fixed by the syllabus</span></div>
+        <div class="table-wrap">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th style="width:64px">Id</th>
+                <th>Label</th>
+                <th style="width:84px" class="right">Courses</th>
+                <th style="width:84px" class="right">Credits</th>
+              </tr>
+            </thead>
+            <tbody id="semRows"></tbody>
+          </table>
         </div>
       </div>
 
       <p class="small muted mt-2">
         Series model: <code class="mono">{ id, name, departmentId, startYear, currentSemester }</code>.
-        Semester model: <code class="mono">{ id, label, year, term }</code> — the id
-        (<code class="mono">"3-1"</code>) is what <code class="mono">Course.semester</code> stores.
+        Semester-plan model: <code class="mono">{ id, seriesId, number, termId, courseIds }</code> —
+        it links a series to the courses it studies in one term.
       </p>
 
     </main>
@@ -79,35 +77,295 @@
 <script>
 (function () {
   'use strict';
+
   var me = Auth.requireRole('admin');
   if (!me) return;
   Shell.mount({ role: 'admin', active: 'series', title: 'Series / Semester' });
 
-  var series = Store.all('series');
-  UI.el('seriesCount').textContent = UI.plural(series.length, 'series', 'series');
+  var dept = Store.department();
+  var semesters = Store.semesters();
 
-  UI.el('seriesRows').innerHTML = series.map(function (s) {
-    var students = Store.where('users', function (u) { return u.seriesId === s.id; });
-    return '<div class="list-row">' +
-      '<div style="flex:1">' +
-        '<div class="list-title">' + UI.esc(s.name) + '</div>' +
-        '<div class="list-sub">Now in ' + UI.esc(Store.semesterLabel(s.currentSemester)) +
-          ' · ' + UI.plural(students.length, 'student') + '</div>' +
-      '</div>' +
-      '<span class="badge tone-blue">' + UI.esc(s.currentSemester) + '</span>' +
-    '</div>';
-  }).join('');
+  /* Which series is shown in the plans panel. Start on the newest one. */
+  var seriesList = Store.seriesList();
+  var selectedId = seriesList.length ? seriesList[seriesList.length - 1].id : '';
 
-  UI.el('semRows').innerHTML = Store.semesters().map(function (s) {
-    var list = Store.coursesOfSemester(s.id);
-    var credits = list.reduce(function (sum, c) { return sum + (c.credits || 0); }, 0);
-    return '<tr>' +
-      '<td class="tbl-code">' + UI.esc(s.id) + '</td>' +
-      '<td><a href="courses.html?semester=' + s.id + '">' + UI.esc(s.label) + '</a></td>' +
-      '<td class="right">' + list.length + '</td>' +
-      '<td class="right">' + (Math.round(credits * 100) / 100).toFixed(2) + '</td>' +
-    '</tr>';
-  }).join('');
+  drawSeries();
+  drawPlans();
+  drawSemesters();
+
+  /* ---------------- left: the series list ---------------- */
+  function drawSeries() {
+    var list = Store.seriesList();
+    UI.el('seriesCount').textContent = UI.plural(list.length, 'series', 'series');
+
+    if (!list.length) {
+      UI.el('seriesRows').innerHTML = UI.emptyState('📅', 'No series yet.', 'Add the first admission batch.');
+      return;
+    }
+
+    UI.el('seriesRows').innerHTML = list.map(function (s) {
+      var students = Store.studentsOfSeries(s.id).length;
+      var isSel = s.id === selectedId;
+      return '<div class="list-row' + (isSel ? ' is-active' : '') + '" data-pick="' + s.id + '" style="cursor:pointer">' +
+        '<div style="flex:1">' +
+          '<div class="list-title">' + UI.esc(s.name) + '</div>' +
+          '<div class="list-sub">Now in ' + UI.esc(Store.semesterLabel(s.currentSemester)) +
+            ' · ' + UI.plural(students, 'student') + '</div>' +
+        '</div>' +
+        '<span class="badge tone-blue">' + UI.esc(s.currentSemester) + '</span>' +
+        '<div class="actions" style="margin-left:8px">' +
+          '<button class="btn btn-sm" data-edit="' + s.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + s.id + '" title="Remove">✕</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    UI.qsa('[data-pick]').forEach(function (row) {
+      row.onclick = function (ev) {
+        if (ev && ev.target && ev.target.getAttribute &&
+           (ev.target.getAttribute('data-edit') || ev.target.getAttribute('data-del'))) return;
+        selectedId = row.getAttribute('data-pick');
+        drawSeries();
+        drawPlans();
+      };
+    });
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openSeriesForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDeleteSeries(b.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- right: semester plans of the selected series ---------------- */
+  function drawPlans() {
+    var series = Store.get('series', selectedId);
+    UI.el('planTitle').textContent = series ? 'Semester plans — ' + series.name : 'Semester plans';
+    if (!series) {
+      UI.el('planRows').innerHTML = UI.emptyState('📚', 'Pick a series on the left.');
+      return;
+    }
+
+    var plans = Store.seriesSemestersOf(series.id);
+    if (!plans.length) {
+      UI.el('planRows').innerHTML = UI.emptyState('📚', 'This series has no semester plan yet.',
+        'Use "Add semester" to plan its first term.');
+      return;
+    }
+
+    UI.el('planRows').innerHTML = plans.map(function (p) {
+      var courses = Store.coursesOfSeriesSemester(p);
+      var chips = courses.length
+        ? courses.map(function (c) { return '<span class="chip mono">' + UI.esc(c.code) + '</span>'; }).join(' ')
+        : '<span class="muted small">no courses linked</span>';
+      return '<div class="list-row" style="align-items:flex-start">' +
+        '<div style="flex:1">' +
+          '<div class="list-title">Semester ' + p.number + ' · ' + UI.esc(Store.semesterLabel(p.termId)) + '</div>' +
+          '<div class="row-wrap mt-1" style="gap:5px">' + chips + '</div>' +
+        '</div>' +
+        '<div class="actions">' +
+          '<button class="btn btn-sm" data-plan="' + p.id + '">Edit courses</button>' +
+          '<button class="btn btn-sm btn-ghost" data-plandel="' + p.id + '" title="Remove">✕</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    UI.qsa('[data-plan]').forEach(function (b) {
+      b.onclick = function () { openPlanForm(b.getAttribute('data-plan')); };
+    });
+    UI.qsa('[data-plandel]').forEach(function (b) {
+      b.onclick = function () { askDeletePlan(b.getAttribute('data-plandel')); };
+    });
+  }
+
+  /* ---------------- bottom: the fixed 8-semester reference ---------------- */
+  function drawSemesters() {
+    UI.el('semRows').innerHTML = semesters.map(function (s) {
+      var list = Store.coursesOfSemester(s.id);
+      var credits = list.reduce(function (sum, c) { return sum + (c.credits || 0); }, 0);
+      return '<tr>' +
+        '<td class="tbl-code">' + UI.esc(s.id) + '</td>' +
+        '<td><a href="courses.html?semester=' + s.id + '">' + UI.esc(s.label) + '</a></td>' +
+        '<td class="right">' + list.length + '</td>' +
+        '<td class="right">' + (Math.round(credits * 100) / 100).toFixed(2) + '</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  /* ---------------- series create / edit ---------------- */
+  function openSeriesForm(seriesId) {
+    var s = seriesId ? Store.get('series', seriesId) : null;
+    var isNew = !s;
+    if (isNew) s = { name: '', startYear: new Date().getFullYear(), currentSemester: '1-1' };
+
+    var semesterOptions = semesters.map(function (x) {
+      return '<option value="' + x.id + '"' + (x.id === s.currentSemester ? ' selected' : '') + '>' +
+             UI.esc(x.label) + ' (' + x.id + ')</option>';
+    }).join('');
+
+    UI.modal({
+      title: isNew ? 'New series' : 'Edit series',
+      okText: isNew ? 'Create series' : 'Save changes',
+      body:
+        '<div class="field"><label for="sName">Series name</label>' +
+          '<input class="input" id="sName" placeholder="Series 24 (2024-25)" value="' + UI.esc(s.name) + '"></div>' +
+        '<div class="field-row">' +
+          '<div class="field" style="flex:0 1 150px"><label for="sYear">Start year</label>' +
+            '<input class="input" id="sYear" type="number" min="2000" max="2100" value="' + UI.esc(s.startYear) + '"></div>' +
+          '<div class="field"><label for="sTerm">Current semester</label>' +
+            '<select class="select" id="sTerm">' + semesterOptions + '</select></div>' +
+        '</div>' +
+        '<div class="error-text" id="sErr"></div>',
+      onOk: function () {
+        var name = UI.el('sName').value.trim();
+        var year = parseInt(UI.el('sYear').value, 10);
+        var err = UI.el('sErr');
+        if (!name) { err.textContent = 'A series name is required.'; return false; }
+        if (isNaN(year)) { err.textContent = 'A start year is required.'; return false; }
+        var record = {
+          name: name, departmentId: dept.id, startYear: year,
+          currentSemester: UI.el('sTerm').value
+        };
+        if (isNew) {
+          selectedId = Store.add('series', record).id;
+          UI.toast(name + ' created');
+        } else {
+          Store.update('series', seriesId, record);
+          UI.toast(name + ' saved');
+        }
+        drawSeries();
+        drawPlans();
+      }
+    });
+  }
+
+  function askDeleteSeries(seriesId) {
+    var s = Store.get('series', seriesId);
+    if (!s) return;
+    var students = Store.studentsOfSeries(seriesId).length;
+    var plans = Store.seriesSemestersOf(seriesId).length;
+    var extras = [];
+    if (students) extras.push(UI.plural(students, 'student'));
+    if (plans) extras.push(UI.plural(plans, 'semester plan'));
+    UI.confirm({
+      title: 'Delete ' + s.name + '?',
+      message: 'The series will be removed' +
+        (extras.length ? ', along with its ' + extras.join(' and ') + ' (and those students\' marks and attendance).' : '.') +
+        ' This cannot be undone.'
+    }, function () {
+      Store.removeSeriesDeep(seriesId);
+      var left = Store.seriesList();
+      selectedId = left.length ? left[left.length - 1].id : '';
+      UI.toast(s.name + ' deleted');
+      drawSeries();
+      drawPlans();
+    });
+  }
+
+  /* ---------------- semester-plan create / edit ---------------- */
+  function openPlanForm(planId) {
+    var series = Store.get('series', selectedId);
+    if (!series) return;
+    var plan = planId ? Store.get('seriesSemesters', planId) : null;
+    var isNew = !plan;
+
+    // Terms this series does not yet have a plan for (for the "new" case).
+    var used = Store.seriesSemestersOf(series.id).map(function (p) { return p.termId; });
+    var freeTerms = semesters.filter(function (x) { return used.indexOf(x.id) < 0; });
+
+    if (isNew && !freeTerms.length) {
+      UI.toast('Every semester already has a plan', 'info');
+      return;
+    }
+
+    var termId = plan ? plan.termId : freeTerms[0].id;
+    var termOptions = (isNew ? freeTerms : semesters).map(function (x) {
+      return '<option value="' + x.id + '"' + (x.id === termId ? ' selected' : '') + '>' +
+             UI.esc(x.label) + ' (' + x.id + ')</option>';
+    }).join('');
+
+    // Courses currently linked to this plan.
+    var linked = {};
+    (plan ? plan.courseIds || [] : Store.coursesOfSemester(termId).map(function (c) { return c.id; }))
+      .forEach(function (id) { linked[id] = true; });
+
+    UI.modal({
+      title: isNew ? 'Add semester plan' : 'Edit ' + Store.semesterLabel(plan.termId) + ' plan',
+      okText: isNew ? 'Add plan' : 'Save courses',
+      wide: true,
+      body:
+        '<div class="field"><label for="pTerm">Semester</label>' +
+          '<select class="select" id="pTerm">' + termOptions + '</select>' +
+          '<div class="hint">The list below shows the courses offered in the chosen semester.</div>' +
+        '</div>' +
+        '<div class="field"><label>Courses in this plan</label>' +
+          '<div id="pCourseList" class="check-list"></div>' +
+        '</div>' +
+        '<div class="error-text" id="pErr"></div>',
+      onOk: function () {
+        var chosenTerm = UI.el('pTerm').value;
+        var courseIds = [];
+        UI.qsa('[data-pc]').forEach(function (cb) {
+          if (cb.checked) courseIds.push(cb.getAttribute('data-pc'));
+        });
+        var record = {
+          seriesId: series.id, termId: chosenTerm,
+          number: termNumber(chosenTerm), courseIds: courseIds
+        };
+        if (isNew) {
+          Store.add('seriesSemesters', record);
+          UI.toast('Plan added');
+        } else {
+          Store.update('seriesSemesters', planId, record);
+          UI.toast('Plan saved');
+        }
+        drawPlans();
+      }
+    });
+
+    function renderPlanCourses() {
+      var term = UI.el('pTerm').value;
+      var list = Store.coursesOfSemester(term).sort(function (a, b) { return a.code < b.code ? -1 : 1; });
+      UI.el('pCourseList').innerHTML = list.length ? list.map(function (c) {
+        return '<label class="check-row">' +
+          '<input type="checkbox" data-pc="' + c.id + '"' + (linked[c.id] ? ' checked' : '') + '>' +
+          '<span class="mono">' + UI.esc(c.code) + '</span> ' + UI.esc(c.name) +
+        '</label>';
+      }).join('') : '<div class="muted small" style="padding:8px">No course in this semester.</div>';
+    }
+    // When the term changes (new plans only), default to that term's full course list.
+    UI.el('pTerm').onchange = function () {
+      linked = {};
+      Store.coursesOfSemester(UI.el('pTerm').value).forEach(function (c) { linked[c.id] = true; });
+      renderPlanCourses();
+    };
+    renderPlanCourses();
+  }
+
+  function askDeletePlan(planId) {
+    var plan = Store.get('seriesSemesters', planId);
+    if (!plan) return;
+    UI.confirm({
+      title: 'Remove this semester plan?',
+      message: Store.semesterLabel(plan.termId) + ' plan will be removed. The courses and ' +
+               'students themselves are not deleted.'
+    }, function () {
+      Store.removeSemesterDeep(planId);
+      UI.toast('Plan removed');
+      drawPlans();
+    });
+  }
+
+  /* '1-1' -> 1 ... '4-2' -> 8 (position in the fixed term list). */
+  function termNumber(termId) {
+    for (var i = 0; i < semesters.length; i += 1) {
+      if (semesters[i].id === termId) return i + 1;
+    }
+    return 0;
+  }
+
+  UI.el('btnAddSeries').onclick = function () { openSeriesForm(null); };
+  UI.el('btnAddPlan').onclick = function () { openPlanForm(null); };
 })();
 </script>
 </body>

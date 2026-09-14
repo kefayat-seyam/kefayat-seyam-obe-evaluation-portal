@@ -20,25 +20,24 @@
       <div class="page-head">
         <div>
           <h1>Faculty Info</h1>
-          <div class="sub">Teachers of the department and the courses assigned to them.</div>
+          <div class="sub">Teachers of this department. One course may be shared by several of them.</div>
         </div>
-        <span class="ro-note">Editing arrives in Visit 3</span>
-      </div>
-
-      <div class="card mb-2">
-        <div class="card-body">
-          <b>Planned for Visit 3 (Group 1, Member 2)</b>
-          <p class="soft mt-1 mb-1">Add, edit and remove teachers; set designation and
-          email; assign or unassign courses in bulk. Until then, course assignment is
-          done from the teacher dropdown in
-          <a href="courses.html">Course Management</a>, and the accounts themselves come
-          from <code class="mono">shared/js/seed-data.js</code>.</p>
-        </div>
+        <button class="btn btn-primary" id="btnAdd">+ New teacher</button>
       </div>
 
       <div class="card">
         <div class="card-head">
-          <h2>Current faculty</h2>
+          <div class="row-wrap" style="flex:1">
+            <div class="search">
+              <input class="input" id="q" placeholder="Search name, email or designation…">
+            </div>
+            <select class="select" id="fStatus" style="flex:0 1 170px">
+              <option value="">Active + on leave</option>
+              <option value="active">Active only</option>
+              <option value="leave">On leave only</option>
+            </select>
+            <button class="btn btn-ghost btn-sm" id="btnClear">Clear</button>
+          </div>
           <span class="small muted" id="countLine"></span>
         </div>
         <div class="table-wrap">
@@ -46,9 +45,10 @@
             <thead>
               <tr>
                 <th style="width:210px">Name</th>
-                <th style="width:180px">Designation</th>
-                <th style="width:220px">Email</th>
+                <th style="width:170px">Designation</th>
+                <th style="width:210px">Email</th>
                 <th>Assigned courses</th>
+                <th style="width:112px"></th>
               </tr>
             </thead>
             <tbody id="rows"></tbody>
@@ -59,7 +59,9 @@
       <p class="small muted mt-2">
         Faculty user model: <code class="mono">{ id, role:'faculty', name, email, password,
         designation, departmentId, onLeave }</code>. The link to a course is
-        <code class="mono">Course.facultyId</code>.
+        <code class="mono">Course.facultyIds</code> — a list — so one course can be
+        shared by several teachers. Teachers from other departments (Maths, Physics,
+        Humanities) are kept on the <a href="external-faculty.html">External Faculty</a> page.
       </p>
 
     </main>
@@ -76,36 +78,230 @@
 <script>
 (function () {
   'use strict';
+
   var me = Auth.requireRole('admin');
   if (!me) return;
   Shell.mount({ role: 'admin', active: 'faculty', title: 'Faculty Info' });
 
-  var list = Store.facultyList();
-  var onLeave = list.filter(function (f) { return f.onLeave; });
-  UI.el('countLine').textContent = UI.plural(list.length, 'teacher') +
-    (onLeave.length ? ' · ' + onLeave.length + ' on leave' : '');
+  var dept = Store.department();
 
-  UI.el('rows').innerHTML = list.map(function (f) {
-    var courses = Store.coursesOfFaculty(f.id);
-    var chips = courses.length
-      ? courses.map(function (c) {
-          return '<span class="chip mono" title="' + UI.esc(c.name) + '">' +
-                 UI.esc(c.code) + '</span>';
-        }).join(' ')
-      : '<span class="muted small">none yet</span>';
-    /* Teachers listed as "On Leave" on the department website keep their
-       account but hold no course this session. */
-    var leaveTag = f.onLeave
-      ? ' <span class="badge tone-amber">On leave</span>'
-      : '';
-    return '<tr>' +
-      '<td><div class="row"><div class="avatar">' + UI.esc(UI.initials(f.name)) + '</div>' +
-        '<span>' + UI.esc(f.name) + '</span></div></td>' +
-      '<td class="soft">' + UI.esc(f.designation || '—') + leaveTag + '</td>' +
-      '<td class="small mono">' + UI.esc(f.email) + '</td>' +
-      '<td><div class="row-wrap" style="gap:5px">' + chips + '</div></td>' +
-    '</tr>';
-  }).join('');
+  /* ---------------- filters ---------------- */
+  ['q', 'fStatus'].forEach(function (id) {
+    UI.el(id).oninput = draw;
+    UI.el(id).onchange = draw;
+  });
+  UI.el('btnClear').onclick = function () {
+    UI.el('q').value = '';
+    UI.el('fStatus').value = '';
+    draw();
+  };
+
+  function visibleFaculty() {
+    var q = UI.el('q').value.trim().toLowerCase();
+    var status = UI.el('fStatus').value;
+    return Store.facultyList().filter(function (f) {
+      if (status === 'active' && f.onLeave) return false;
+      if (status === 'leave' && !f.onLeave) return false;
+      if (q && (f.name + ' ' + f.email + ' ' + (f.designation || ''))
+                 .toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    }).sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+  }
+
+  /* ---------------- the table ---------------- */
+  function draw() {
+    var list = visibleFaculty();
+    var all = Store.facultyList();
+    var onLeave = all.filter(function (f) { return f.onLeave; });
+    UI.el('countLine').textContent = UI.plural(all.length, 'teacher') +
+      (onLeave.length ? ' · ' + onLeave.length + ' on leave' : '');
+
+    if (!list.length) {
+      UI.el('rows').innerHTML = '<tr><td colspan="5">' +
+        UI.emptyState('👤', 'No teacher matches these filters.',
+                      'Clear the filters, or add a new teacher.') + '</td></tr>';
+      return;
+    }
+
+    UI.el('rows').innerHTML = list.map(function (f) {
+      var courses = Store.coursesOfFaculty(f.id);
+      var chips = courses.length
+        ? courses.map(function (c) {
+            return '<span class="chip mono" title="' + UI.esc(c.name) + '">' +
+                   UI.esc(c.code) + '</span>';
+          }).join(' ')
+        : '<span class="muted small">none yet</span>';
+      var leaveTag = f.onLeave ? ' <span class="badge tone-amber">On leave</span>' : '';
+      return '<tr>' +
+        '<td><div class="row"><div class="avatar">' + UI.esc(UI.initials(f.name)) + '</div>' +
+          '<span>' + UI.esc(f.name) + '</span></div></td>' +
+        '<td class="soft">' + UI.esc(f.designation || '—') + leaveTag + '</td>' +
+        '<td class="small mono">' + UI.esc(f.email) + '</td>' +
+        '<td><div class="row-wrap" style="gap:5px">' + chips + '</div></td>' +
+        '<td><div class="actions">' +
+          '<button class="btn btn-sm" data-edit="' + f.id + '">Edit</button>' +
+          '<button class="btn btn-sm btn-ghost" data-del="' + f.id + '" title="Remove">✕</button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    UI.qsa('[data-edit]').forEach(function (b) {
+      b.onclick = function () { openForm(b.getAttribute('data-edit')); };
+    });
+    UI.qsa('[data-del]').forEach(function (b) {
+      b.onclick = function () { askDelete(b.getAttribute('data-del')); };
+    });
+  }
+
+  /* ---------------- create / edit ---------------- */
+  function openForm(facultyId) {
+    var f = facultyId ? Store.get('users', facultyId) : null;
+    var isNew = !f;
+    if (isNew) f = { name: '', email: '', designation: 'Assistant Professor', onLeave: false };
+
+    /* One tick box per course; ticked = this teacher takes it. "picked" is
+       the source of truth so a search that hides rows never loses a choice.
+       A course can carry several teachers now, so we ask the Store whether
+       THIS teacher is one of them. */
+    var picked = {};
+    Store.all('courses').forEach(function (c) {
+      picked[c.id] = (c.facultyIds || []).indexOf(facultyId) >= 0;
+    });
+
+    UI.modal({
+      title: isNew ? 'New teacher' : 'Edit ' + f.name,
+      okText: isNew ? 'Create teacher' : 'Save changes',
+      wide: true,
+      body:
+        '<div class="field-row">' +
+          '<div class="field" style="flex:2 1 220px"><label for="fName">Full name</label>' +
+            '<input class="input" id="fName" placeholder="Fariya Tabassum" value="' +
+              UI.esc(f.name) + '"></div>' +
+          '<div class="field" style="flex:2 1 220px"><label for="fEmail">Email</label>' +
+            '<input class="input mono" id="fEmail" placeholder="name@ece.ruet.ac.bd" value="' +
+              UI.esc(f.email) + '"></div>' +
+        '</div>' +
+        '<div class="field-row">' +
+          '<div class="field" style="flex:2 1 220px"><label for="fDesig">Designation</label>' +
+            '<select class="select" id="fDesig">' +
+              ['Professor', 'Associate Professor', 'Assistant Professor', 'Lecturer']
+                .map(function (d) {
+                  return '<option' + (d === f.designation ? ' selected' : '') + '>' + d + '</option>';
+                }).join('') +
+            '</select></div>' +
+          '<div class="field" style="flex:1 1 160px"><label>&nbsp;</label>' +
+            '<label class="row" style="gap:8px;font-weight:500;height:38px">' +
+              '<input type="checkbox" id="fLeave"' + (f.onLeave ? ' checked' : '') + '>' +
+              '<span>Currently on leave</span></label></div>' +
+        '</div>' +
+        '<div class="field"><label for="fCourseSearch">Assigned courses</label>' +
+          '<input class="input" id="fCourseSearch" placeholder="Filter courses by code or title…">' +
+          '<div id="fCourseList" class="check-list"></div>' +
+          '<div class="hint">A course can be shared. Ticking one ADDS this teacher to it ' +
+            'and leaves the teachers already on it alone; unticking only removes this teacher.</div>' +
+        '</div>' +
+        '<div class="error-text" id="fErr"></div>',
+
+      onOk: function () {
+        var name = UI.el('fName').value.trim();
+        var email = UI.el('fEmail').value.trim();
+        var err = UI.el('fErr');
+        if (!name) { err.textContent = 'A name is required.'; return false; }
+        if (!/^\S+@\S+\.\S+$/.test(email)) { err.textContent = 'A valid email is required.'; return false; }
+        var clash = Store.where('users', function (u) {
+          return u.email.toLowerCase() === email.toLowerCase() && u.id !== facultyId;
+        })[0];
+        if (clash) { err.textContent = 'That email is already used by ' + clash.name + '.'; return false; }
+
+        var record = {
+          role: 'faculty', departmentId: dept.id,
+          external: false,                        // this page is for ECE staff only
+          name: name, email: email,
+          designation: UI.el('fDesig').value,
+          onLeave: UI.el('fLeave').checked
+        };
+
+        var savedId = facultyId;
+        if (isNew) {
+          record.password = 'faculty123';         // demo default; no backend to protect
+          savedId = Store.add('users', record).id;
+          UI.toast(name + ' added');
+        } else {
+          Store.update('users', facultyId, record);
+          UI.toast(name + ' saved');
+        }
+
+        /* Apply the course ticks. A course keeps a LIST of teachers, so we
+           only add or remove this one and never touch the others. */
+        Store.all('courses').forEach(function (c) {
+          var wanted = !!picked[c.id];
+          var onIt = (c.facultyIds || []).indexOf(savedId) >= 0;
+          if (wanted && !onIt) Store.assignTeacher(c.id, savedId);
+          else if (!wanted && onIt) Store.unassignTeacher(c.id, savedId);
+        });
+
+        draw();
+      }
+    });
+
+    /* fill the checklist and keep it in sync as the admin searches / ticks */
+    function renderCourseList() {
+      var term = (UI.el('fCourseSearch').value || '').trim().toLowerCase();
+      var courses = Store.all('courses')
+        .filter(function (c) {
+          return !term || (c.code + ' ' + c.name).toLowerCase().indexOf(term) >= 0;
+        })
+        .sort(function (a, b) {
+          if (a.semester !== b.semester) return a.semester < b.semester ? -1 : 1;
+          return a.code < b.code ? -1 : 1;
+        });
+
+      UI.el('fCourseList').innerHTML = courses.length ? courses.map(function (c) {
+        /* Who else is already on this course? We list the other teachers so
+           the head can see a course is shared before ticking it. */
+        var others = Store.teachersOfCourse(c.id)
+          .filter(function (u) { return u.id !== facultyId; })
+          .map(function (u) { return u.name; });
+        var alsoText = others.length
+          ? ' <span class="muted small">— also: ' + UI.esc(others.join(', ')) + '</span>'
+          : '';
+        return '<label class="check-row">' +
+          '<input type="checkbox" data-cc="' + c.id + '"' + (picked[c.id] ? ' checked' : '') + '>' +
+          '<span class="mono">' + UI.esc(c.code) + '</span> ' + UI.esc(c.name) + alsoText +
+        '</label>';
+      }).join('') : '<div class="muted small" style="padding:8px">No course matches.</div>';
+
+      UI.qsa('[data-cc]').forEach(function (cb) {
+        cb.onchange = function () { picked[cb.getAttribute('data-cc')] = cb.checked; };
+      });
+    }
+    UI.el('fCourseSearch').oninput = renderCourseList;
+    renderCourseList();
+  }
+
+  /* ---------------- delete ---------------- */
+  function askDelete(facultyId) {
+    var f = Store.get('users', facultyId);
+    if (!f) return;
+    var courses = Store.coursesOfFaculty(facultyId);
+    UI.confirm({
+      title: 'Remove ' + f.name + '?',
+      message: 'Their account will be removed' +
+        (courses.length
+          ? ', and they will be taken off their ' + UI.plural(courses.length, 'course') +
+            '. Any co-teacher on those courses stays.'
+          : '.') + ' This cannot be undone.'
+    }, function () {
+      // removeFacultyDeep unassigns them from every course first, then
+      // deletes the account, so no course is left pointing at a ghost.
+      Store.removeFacultyDeep(facultyId);
+      UI.toast(f.name + ' removed');
+      draw();
+    });
+  }
+
+  UI.el('btnAdd').onclick = function () { openForm(null); };
+  draw();
 })();
 </script>
 </body>

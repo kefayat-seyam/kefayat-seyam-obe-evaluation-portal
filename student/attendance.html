@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Attendance</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar"></aside>
+  <div class="main">
+    <header class="topbar" id="topbar"></header>
+    <main class="content">
+
+      <div class="page-head">
+        <div>
+          <h1>My attendance</h1>
+          <div class="sub">Your class attendance in every course this semester.</div>
+        </div>
+        <span class="ro-note">Read-only view</span>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-head">
+          <h2>Summary</h2>
+          <span class="small muted">A late arrival counts as half a class.</span>
+        </div>
+        <div class="card-body tight">
+          <div class="table-wrap">
+            <table class="tbl" id="sumTbl"></table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-2">
+        <div class="card-body">
+          <label class="label" for="cCourse">Day-by-day for</label>
+          <select class="select" id="cCourse"></select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Class log</h2>
+          <span class="small muted" id="logMeta"></span>
+        </div>
+        <div class="card-body tight" id="logBox"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="../shared/js/seed-courses.js"></script>
+<script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script>
+<script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script>
+<script src="../shared/js/shell.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var me = Auth.requireRole('student');
+  if (!me) return;
+  Shell.mount({ role: 'student', active: 'attendance', title: 'My Attendance' });
+
+  var STATUS = {
+    present: { label: 'Present', tone: 'green' },
+    late:    { label: 'Late',    tone: 'amber' },
+    absent:  { label: 'Absent',  tone: 'red' }
+  };
+
+  /* Current-semester courses plus any earlier course that still holds
+     attendance of mine, so the record does not vanish when the batch
+     moves up a semester. */
+  var courses = Store.coursesWithRecords(me);
+
+  if (!courses.length) {
+    UI.el('sumTbl').innerHTML = '<tbody><tr><td>' +
+      UI.emptyState('📅', 'No course found for your semester yet.') + '</td></tr></tbody>';
+    UI.el('cCourse').innerHTML = '<option value="">No course</option>';
+    UI.el('logBox').innerHTML = UI.emptyState('📅', 'Nothing to show.');
+    return;
+  }
+
+  /* ---------------- summary table ---------------- */
+  UI.el('sumTbl').innerHTML =
+    '<thead><tr>' +
+      '<th>Course</th><th class="right">Present</th><th class="right">Late</th>' +
+      '<th class="right">Absent</th><th class="right">Classes</th><th class="right">Attendance</th>' +
+    '</tr></thead><tbody>' +
+    courses.map(function (c) {
+      var s = Store.attendanceSummary(me.id, c.id);
+      var tone = s.total === 0 ? 'grey' : s.pct >= 70 ? 'green' : s.pct >= 60 ? 'amber' : 'red';
+      return '<tr>' +
+        '<td><span class="tbl-code">' + UI.esc(c.code) + '</span><div class="small soft">' +
+          UI.esc(c.name) + '</div></td>' +
+        '<td class="right">' + s.present + '</td>' +
+        '<td class="right">' + s.late + '</td>' +
+        '<td class="right">' + s.absent + '</td>' +
+        '<td class="right">' + s.total + '</td>' +
+        '<td class="right">' + (s.total ? '<span class="badge tone-' + tone + '">' + s.pct + '%</span>' : '—') + '</td>' +
+      '</tr>';
+    }).join('') + '</tbody>';
+
+  /* ---------------- per-course day log ---------------- */
+  var wanted = (/course=([\w-]+)/.exec(window.location.search) || [])[1];
+  UI.el('cCourse').innerHTML = courses.map(function (c) {
+    return '<option value="' + c.id + '">' + UI.esc(c.code + ' — ' + c.name) + '</option>';
+  }).join('');
+  if (wanted && courses.some(function (c) { return c.id === wanted; })) UI.el('cCourse').value = wanted;
+  UI.el('cCourse').onchange = drawLog;
+
+  function drawLog() {
+    var course = Store.get('courses', UI.el('cCourse').value);
+    var rows = Store.attendanceFor(me.id, course.id)
+      .slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    var s = Store.attendanceSummary(me.id, course.id);
+
+    UI.el('logMeta').textContent = s.total
+      ? s.total + ' classes · ' + s.pct + '% present'
+      : '';
+
+    UI.el('logBox').innerHTML = rows.length ? rows.map(function (r) {
+      var st = STATUS[r.status] || STATUS.absent;
+      return '<div class="list-row">' +
+        '<span class="badge tone-' + st.tone + '">' + st.label + '</span>' +
+        '<div style="flex:1">' + UI.date(r.date) + '</div>' +
+      '</div>';
+    }).join('') : UI.emptyState('📅', 'No class recorded for this course yet.');
+  }
+
+  drawLog();
+})();
+</script>
+</body>
+</html>

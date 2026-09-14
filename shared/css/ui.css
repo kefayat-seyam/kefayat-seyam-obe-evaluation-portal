@@ -282,6 +282,46 @@
 .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
 .error-text { font-size: 12px; color: var(--red); margin-top: 5px; min-height: 16px; }
 
+/* A scrollable box of tick boxes (assign courses to a teacher, pick the
+   courses in a semester plan, and so on). */
+.check-list {
+  max-height: 230px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--panel-2);
+  padding: 4px;
+}
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.check-row:hover { background: var(--panel); }
+.check-row input { flex: 0 0 auto; width: 15px; height: 15px; cursor: pointer; }
+.check-row .mono { color: var(--blue); font-weight: 600; }
+
+/* A three-way segmented control (present / late / absent on the
+   attendance sheet). The real radio input is hidden; the label is the
+   button. */
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 8px; overflow: hidden; }
+.seg-opt {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-soft);
+  cursor: pointer;
+  border-right: 1px solid var(--border-strong);
+}
+.seg-opt:last-child { border-right: none; }
+.seg-opt:hover { background: var(--panel-2); }
+.seg-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+.seg-opt.is-on { background: var(--blue-soft); color: var(--blue); }
+
 .search {
   position: relative;
   flex: 0 1 260px;
@@ -444,16 +484,61 @@ table.tbl .actions { display: flex; gap: 6px; justify-content: flex-end; }
 .course-card .name { font-weight: 600; margin-top: 3px; }
 
 /* ---------------- 11. LOGIN PAGE ---------------- */
-.login-wrap { min-height: 100vh; display: flex; }
+/* The login page is a single screen: it fills the window exactly and never
+   scrolls. If the window is very short, the form side scrolls on its own
+   (see .login-form-side) so nothing can become unreachable. */
+body.login-page { overflow: hidden; }
+.login-wrap { height: 100vh; display: flex; overflow: hidden; }
 .login-art {
   flex: 1 1 46%;
   background: linear-gradient(150deg, var(--blue) 0%, #2b3ec9 55%, #1d2a8f 100%);
   color: #fff;
   padding: 46px 44px;
   display: flex; flex-direction: column; justify-content: space-between;
+  /* The campus photo sits behind the text, so we need a stacking context. */
+  position: relative;
+  overflow: hidden;
 }
+
+/* The RUET main-gate photo, faded into the blue panel.
+   It is a decorative layer, so it lives in a ::before instead of an <img>:
+   that way the opacity applies to the picture alone and never touches the
+   text on top of it. */
+.login-art::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 62%;
+  background: url('../img/ruet-campus.jpg') center bottom / cover no-repeat;
+  opacity: .6;
+  /* Fade the top edge out so the photo melts into the blue instead of
+     starting with a hard line. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 45%, #000 100%);
+          mask-image: linear-gradient(to bottom, transparent 0%, #000 45%, #000 100%);
+  pointer-events: none;
+}
+
+/* Everything written inside the panel stays above the photo. */
+.login-art > * { position: relative; z-index: 1; }
+
 .login-art h2 { font-size: 27px; line-height: 1.28; max-width: 15em; }
 .login-art .pitch { opacity: .86; max-width: 30em; margin-top: 12px; }
+
+/* A short rule under the headline, purely decorative. */
+.login-art .art-rule {
+  width: 54px; height: 3px; border-radius: 2px;
+  background: rgba(255, 255, 255, .6);
+  margin: 18px 0 16px;
+}
+
+/* The three small figures along the bottom of the blue panel. */
+.art-stats { display: flex; gap: 30px; }
+.art-stat .n { font-size: 23px; font-weight: 700; line-height: 1.1; }
+.art-stat .t {
+  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+  opacity: .75; margin-top: 3px;
+}
+
 .login-art ul { list-style: none; padding: 0; margin: 26px 0 0; }
 .login-art li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 12px; opacity: .93; }
 .login-art li b { font-weight: 600; }
@@ -467,6 +552,8 @@ table.tbl .actions { display: flex; gap: 6px; justify-content: flex-end; }
   display: grid; place-items: center;
   padding: 32px 20px;
   background: var(--bg);
+  /* Only this side may scroll, and only when the window is too short. */
+  overflow: auto;
 }
 .login-box { width: 100%; max-width: 400px; }
 

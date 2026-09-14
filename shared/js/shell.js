@@ -40,7 +40,13 @@ window.Shell = (function () {
     layers:  '<path d="M12 2l10 5-10 5L2 7z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>',
     logout:  '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
     refresh: '<path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9a9 9 0 0 0-14.9-3.4L1 10M23 14l-4.6 4.4A9 9 0 0 1 3.5 15"/>',
-    home:    '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>'
+    power:   '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
+    home:    '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/>',
+    chart:   '<path d="M3 3v18h18"/><path d="M7 15V9M12 15V5M17 15v-3"/>',
+    clipboard:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/>',
+    user:    '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+    globe:   '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/>',
+    cog:     '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'
   };
 
   function icon(name) {
@@ -60,34 +66,42 @@ window.Shell = (function () {
       { id: 'courses',   label: 'Course Management', href: 'courses.html',     icon: 'book' },
       { id: 'copo',      label: 'CO / PO Framework', href: 'co-po.html',       icon: 'target' },
       { group: 'Department' },
-      { id: 'faculty',   label: 'Faculty Info',      href: 'faculty-info.html', icon: 'users',    soon: true },
-      { id: 'students',  label: 'Students Info',     href: 'students-info.html', icon: 'cap',     soon: true },
-      { id: 'series',    label: 'Series / Semester', href: 'series.html',       icon: 'calendar', soon: true },
-      { id: 'notices',   label: 'Notices',           href: 'notices.html',      icon: 'bell',     soon: true }
+      { id: 'faculty',   label: 'Faculty Info',      href: 'faculty-info.html', icon: 'users' },
+      { id: 'external',  label: 'External Faculty',  href: 'external-faculty.html', icon: 'globe' },
+      { id: 'students',  label: 'Student Rolls',     href: 'students-info.html', icon: 'cap' },
+      { id: 'series',    label: 'Series / Semester', href: 'series.html',       icon: 'calendar' },
+      { id: 'notices',   label: 'Notices',           href: 'notices.html',      icon: 'bell' }
     ],
 
     faculty: [
       { group: 'Overview' },
-      { id: 'dashboard',  label: 'My Dashboard',     href: 'dashboard.html',   icon: 'grid' },
+      { id: 'dashboard',  label: 'My Dashboard',      href: 'dashboard.html',     icon: 'grid' },
       { group: 'My Courses' },
-      { id: 'curriculum', label: 'Curriculum Editor', href: 'curriculum.html', icon: 'pencil' },
+      { id: 'outcomes',   label: 'Course Outcomes',   href: 'outcomes.html',      icon: 'pencil' },
       { id: 'copo',       label: 'CO-PO Mapping',     href: 'co-po-mapping.html', icon: 'target' },
-      { group: 'Coming in Visit 3' },
-      { id: 'marks',      label: 'CT & Exam Marks',   href: 'marks.html',      icon: 'file',     soon: true },
-      { id: 'attendance', label: 'Attendance',        href: 'attendance.html', icon: 'calendar', soon: true },
-      { id: 'notices',    label: 'Notices',           href: 'notices.html',    icon: 'bell',     soon: true }
+      { group: 'Assessment' },
+      { id: 'questions',  label: 'Question Setup',    href: 'questions.html',     icon: 'clipboard' },
+      { id: 'marks',      label: 'CT & Exam Marks',   href: 'marks.html',         icon: 'file' },
+      { id: 'assignments',label: 'Assignments',       href: 'assignments.html',   icon: 'layers' },
+      { id: 'attendance', label: 'Attendance',        href: 'attendance.html',    icon: 'calendar' },
+      { group: 'Reports' },
+      { id: 'attainment', label: 'CO / PO Attainment', href: 'attainment.html',   icon: 'chart' },
+      { id: 'notices',    label: 'Notices',           href: 'notices.html',       icon: 'bell' }
     ],
 
     student: [
       { group: 'Overview' },
       { id: 'dashboard', label: 'My Dashboard',   href: 'dashboard.html', icon: 'grid' },
       { group: 'My Courses' },
-      { id: 'syllabus',  label: 'Syllabus',       href: 'syllabus.html',  icon: 'book' },
-      { id: 'notices',   label: 'Notices',        href: 'notices.html',   icon: 'bell' },
-      { group: 'Coming in Visit 3' },
-      { id: 'marks',     label: 'Marks',          href: 'marks.html',      icon: 'file',   soon: true },
-      { id: 'attainment',label: 'CO / PO Attainment', href: 'attainment.html', icon: 'target', soon: true },
-      { id: 'attendance',label: 'Attendance',     href: 'attendance.html', icon: 'calendar', soon: true }
+      { id: 'syllabus',    label: 'Syllabus',     href: 'syllabus.html',    icon: 'book' },
+      { id: 'outcomes',    label: 'Course Outcomes', href: 'outcomes.html', icon: 'target' },
+      { id: 'assignments', label: 'Assignments',  href: 'assignments.html', icon: 'pencil' },
+      { id: 'notices',     label: 'Notices',      href: 'notices.html',     icon: 'bell' },
+      { group: 'Results' },
+      { id: 'marks',     label: 'Marks',          href: 'marks.html',      icon: 'file' },
+      { id: 'attendance',label: 'Attendance',     href: 'attendance.html', icon: 'calendar' },
+      { group: 'Account' },
+      { id: 'profile',   label: 'My Profile',     href: 'profile.html',    icon: 'user' }
     ]
   };
 
@@ -125,6 +139,8 @@ window.Shell = (function () {
         '<div class="nav-group">Session</div>' +
         '<a class="nav-link" href="#" id="resetDataLink">' + icon('refresh') +
           '<span>Reset demo data</span></a>' +
+        '<a class="nav-link" href="#" id="startFreshLink">' + icon('power') +
+          '<span>Start fresh (empty app)</span></a>' +
         '<a class="nav-link" href="#" id="logoutLink">' + icon('logout') +
           '<span>Log out</span></a>' +
       '</nav>';
@@ -166,6 +182,23 @@ window.Shell = (function () {
         okText: 'Reset everything'
       }, function () {
         Store.reset();
+        window.location.reload();
+      });
+    };
+
+    UI.el('startFreshLink').onclick = function (ev) {
+      ev.preventDefault();
+      UI.confirm({
+        title: 'Start fresh — empty the app?',
+        message: 'This clears every teacher, student, series, course outcome, ' +
+                 'CO-PO mapping, notice, assignment, mark and attendance record, ' +
+                 'and unassigns every course, leaving a blank app. The fixed ' +
+                 'foundation stays: the department, the eight semesters, the 122 ' +
+                 'syllabus courses and their topics, the program outcomes, and the ' +
+                 'admin login. This cannot be undone.',
+        okText: 'Empty the app'
+      }, function () {
+        Store.startFresh();
         window.location.reload();
       });
     };
