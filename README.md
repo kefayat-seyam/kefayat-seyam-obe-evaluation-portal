@@ -48,7 +48,11 @@ their own name, section and contact number on the **My Profile** page of
 their portal, and changes that password there as well.
 
 There is no real security here — passwords sit in plain text in the seed file.
-That is fine for a class project and is noted in `shared/js/auth.js` too.
+That is fine for a frontend demonstration and is noted in `shared/js/auth.js`.
+It is not suitable for production security. Evaluation API methods enforce
+the demo role and ownership checks in `Store`, but a production deployment
+must replace localStorage and role checks with server-side authentication,
+authorization and encrypted storage.
 
 ## Folder layout
 
@@ -113,6 +117,17 @@ and the final), Attendance (summary plus a day-by-day log), and Notices
 (department + my semester + my courses). The one page a student can type
 on is **My Profile**: their own name, section and contact number, and
 their own password. Nothing else on the student side is editable.
+
+**Course Evaluation & Feedback** — faculty create course-wise evaluations
+with custom sections and rating 1-5, MCQ, checkbox and written-feedback
+questions. Optional CLO mappings are stored on questions. Publishing makes
+an evaluation available only to eligible students in that course semester;
+submissions are persistent, deadline checked and duplicate protected.
+Student feedback is anonymous by default. Aggregate analytics, question
+statistics, response percentages and written suggestions/improvement areas
+are available only to the creator teacher, who can also export CSV or print
+to PDF. Individual reports are restricted to the creator and never expose
+student identity for anonymous evaluations.
 
 ## Data models
 
@@ -206,6 +221,17 @@ Question    { id, courseId, paper, qNo, maxMarks,
 
 QuestionMark { id, studentId, courseId, questionId, marks }
               // what one student scored on one question
+
+CourseEvaluation { id, courseId, creatorFacultyId, title, description,
+                   deadline, anonymous, status, sections, createdAt,
+                   publishedAt }
+              // status is "draft" or "published"
+              // sections contain typed questions with optional cloIds
+
+EvaluationResponse { id, evaluationId, studentId, submittedAt, answers }
+              // one response per student/evaluation
+              // studentId is retained only for creator individual reports;
+              // default anonymous mode hides that identity everywhere
 ```
 
 The course total (out of 100) is worked out in one place, `Store.courseResult`:

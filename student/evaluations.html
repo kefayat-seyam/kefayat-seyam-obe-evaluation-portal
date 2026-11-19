@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Course Evaluations</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png"><link rel="stylesheet" href="../shared/css/theme.css"><link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+<div class="shell"><aside class="sidebar" id="sidebar"></aside><div class="main"><header class="topbar" id="topbar"></header><main class="content">
+<div class="page-head"><div><h1>Course Evaluation &amp; Feedback</h1><div class="sub">Share feedback with your course teacher</div></div></div>
+<div class="card"><div class="card-head"><h2>Available evaluations</h2><span class="small muted" id="evalCount"></span></div><div class="card-body" id="evalBox"></div></div>
+</main></div></div>
+<script src="../shared/js/seed-courses.js"></script><script src="../shared/js/seed-data.js"></script><script src="../shared/js/store.js"></script>
+<script src="../shared/js/ui.js"></script><script src="../shared/js/theme.js"></script><script src="../shared/js/auth.js"></script><script src="../shared/js/shell.js"></script>
+<script>
+(function(){
+'use strict';
+var me=Auth.requireRole('student');if(!me)return;
+Shell.mount({role:'student',active:'evaluations',title:'Course Evaluations'});
+function draw(){
+ var list=Store.evaluationsForStudent(me.id);
+ UI.el('evalCount').textContent=UI.plural(list.length,'evaluation');
+ UI.el('evalBox').innerHTML=list.length?list.map(function(item){
+  var e=item.evaluation,c=Store.get('courses',e.courseId);
+  return '<div class="course-card mb-2"><div class="code">'+UI.esc(c?c.code:'Course')+'</div><div class="name">'+UI.esc(e.title)+'</div>'+
+   '<div class="small soft mt-1">'+UI.esc(e.description||'')+'</div><div class="mt-2">'+
+   (item.submitted?' <span class="badge">Submitted</span>':'<button class="btn btn-primary" data-open="'+e.id+'">Complete evaluation</button>')+
+   '<span class="small muted" style="margin-left:10px">'+(e.deadline?'Deadline '+UI.esc(UI.date(e.deadline)):'No deadline')+'</span></div></div>';
+ }).join(''):'<div class="empty"><span class="empty-ico">📝</span><div>No evaluations are available for you.</div></div>';
+ UI.qsa('[data-open]').forEach(function(b){b.onclick=function(){submitEvaluationForm(b.getAttribute('data-open'));};});
+}
+function submitEvaluationForm(evaluationId){
+ var e=Store.get('courseEvaluations',evaluationId);if(!e)return;
+ var html='<p class="small muted">'+(e.anonymous?'Anonymous feedback: your response is not shown to teachers in aggregate charts.':'Feedback response.')+'</p>';
+ (e.sections||[]).forEach(function(section){
+  html+='<h3>'+UI.esc(section.title)+'</h3>';
+  (section.questions||[]).forEach(function(q){
+   var id='answer-'+q.id;
+   html+='<div class="field"><label for="'+id+'">'+UI.esc(q.text)+(q.required?' *':'')+'</label>';
+   if(q.type==='rating')html+='<select class="select" id="'+id+'"><option value="">Choose 1–5</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>';
+   else if(q.type==='mcq')html+='<select class="select" id="'+id+'"><option value="">Choose an option</option>'+q.options.map(function(o){return '<option value="'+UI.esc(o)+'">'+UI.esc(o)+'</option>';}).join('')+'</select>';
+   else if(q.type==='checkbox')html+='<div>'+q.options.map(function(o,i){return '<label style="display:block;margin:6px 0"><input type="checkbox" name="'+id+'" value="'+UI.esc(o)+'"> '+UI.esc(o)+'</label>';}).join('')+'</div>';
+   else html+='<textarea class="textarea" id="'+id+'" maxlength="5000"></textarea>';
+   html+='</div>';
+  });
+ });
+ html+='<div class="error-text" id="evSubmitErr"></div>';
+ UI.modal({title:e.title,wide:true,okText:'Submit feedback',body:html,onOk:function(){
+  var answers={};
+  (e.sections||[]).forEach(function(section){(section.questions||[]).forEach(function(q){
+   var id='answer-'+q.id;
+   if(q.type==='checkbox')answers[q.id]=UI.qsa('input[name="'+id+'"]:checked').map(function(x){return x.value;});
+   else if(q.type==='rating')answers[q.id]=UI.el(id).value?Number(UI.el(id).value):'';
+   else answers[q.id]=UI.el(id).value;
+  });});
+  var r=Store.submitEvaluation(me.id,evaluationId,answers);if(!r.ok){UI.el('evSubmitErr').textContent=r.error;return false;}
+  UI.toast('Feedback submitted');draw();
+ }});
+}
+draw();
+})();
+</script>
+</body></html>

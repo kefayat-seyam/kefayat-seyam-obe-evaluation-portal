@@ -86,6 +86,7 @@ window.Shell = (function () {
       { id: 'attendance', label: 'Attendance',        href: 'attendance.html',    icon: 'calendar' },
       { group: 'Reports' },
       { id: 'attainment', label: 'CO / PO Attainment', href: 'attainment.html',   icon: 'chart' },
+      { id: 'evaluations', label: 'Course Evaluations', href: 'evaluations.html', icon: 'clipboard' },
       { id: 'notices',    label: 'Notices',           href: 'notices.html',       icon: 'bell' }
     ],
 
@@ -96,6 +97,7 @@ window.Shell = (function () {
       { id: 'syllabus',    label: 'Syllabus',     href: 'syllabus.html',    icon: 'book' },
       { id: 'outcomes',    label: 'Course Outcomes', href: 'outcomes.html', icon: 'target' },
       { id: 'assignments', label: 'Assignments',  href: 'assignments.html', icon: 'pencil' },
+      { id: 'evaluations', label: 'Evaluations',  href: 'evaluations.html', icon: 'clipboard' },
       { id: 'notices',     label: 'Notices',      href: 'notices.html',     icon: 'bell' },
       { group: 'Results' },
       { id: 'marks',     label: 'Marks',          href: 'marks.html',      icon: 'file' },

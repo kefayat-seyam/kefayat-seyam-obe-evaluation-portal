@@ -180,7 +180,7 @@ group('B. Store operations');
 /* --- add --- */
 const made = Store.add('courses', {
   code: 'TEST 9999', name: 'Harness Course', semester: '3-1',
-  departmentId: 'dept-ece', credits: 3, type: 'theory', optional: false, facultyId: null
+  departmentId: 'dept-ece', credits: 3, type: 'theory', optional: false, facultyIds: []
 });
 check('add() returns a record with a generated crs- id',
   !!made.id && made.id.indexOf('crs-') === 0, made.id);
@@ -294,7 +294,7 @@ check('what is stored is valid JSON with a courses array', (() => {
    read back what the first page saved, including an edit. */
 Store.add('courses', {
   code: 'KEEP 1000', name: 'Survives navigation', semester: '1-1',
-  departmentId: 'dept-ece', credits: 1, type: 'theory', optional: false, facultyId: null
+  departmentId: 'dept-ece', credits: 1, type: 'theory', optional: false, facultyIds: []
 });
 const env2 = makeEnv({ storage: env.storage });
 env2.loadShared();
@@ -399,6 +399,126 @@ check('a student on a student page is let through',
   !!guardEnv.sandbox.Auth.requireRole('student'));
 check('Auth.current() returns the logged-in user record',
   (guardEnv.sandbox.Auth.current() || {}).email === studentUser.email);
+
+/* ================================================================
+   B4. COURSE EVALUATION & FEEDBACK
+   ================================================================ */
+
+group('B. Course evaluation and feedback');
+
+const facultyCourses = Store.coursesOfFaculty(facultyUser.id);
+const evaluationCourse = facultyCourses[0];
+let eligibleStudent = Store.studentList().filter((s) =>
+  evaluationCourse && s.semester === evaluationCourse.semester)[0];
+if (evaluationCourse && !eligibleStudent) {
+  eligibleStudent = Store.add('users', {
+    role: 'student',
+    departmentId: 'dept-ece',
+    name: 'Evaluation Test Student',
+    email: 'evaluation-test@student.ruet.ac.bd',
+    password: 'student123',
+    roll: 'eval-test',
+    seriesId: null,
+    semester: evaluationCourse.semester,
+    section: 'A',
+    contact: '',
+    profileComplete: true
+  });
+}
+
+check('the seed has a faculty course and eligible student for evaluation tests',
+  !!evaluationCourse && !!eligibleStudent,
+  evaluationCourse ? evaluationCourse.code : 'no faculty course');
+
+const evaluationCLO = Store.outcomesOf(evaluationCourse.id)[0];
+const createdEvaluation = Store.createEvaluation(facultyUser.id, {
+  courseId: evaluationCourse.id,
+  title: 'Harness course feedback',
+  description: 'Please provide honest feedback.',
+  deadline: '2026-12-31',
+  anonymous: true,
+  sections: [{
+    title: 'Teaching',
+    questions: [
+      { text: 'Teaching quality', type: 'rating', required: true, cloIds: evaluationCLO ? [evaluationCLO.id] : [] },
+      { text: 'Overall delivery', type: 'mcq', required: true, options: ['Excellent', 'Good', 'Needs improvement'] },
+      { text: 'Suggestions', type: 'written', required: false, cloIds: [] },
+      { text: 'Priority improvements', type: 'checkbox', required: true, options: ['Examples', 'Pacing', 'Resources'] }
+    ]
+  }]
+});
+check('a creator faculty can build and persist an evaluation',
+  createdEvaluation.ok && !!Store.get('courseEvaluations', createdEvaluation.evaluation.id));
+const evalId = createdEvaluation.evaluation ? createdEvaluation.evaluation.id : null;
+check('course assignments restrict evaluation creation',
+  Store.createEvaluation(Store.facultyList().filter((f) => f.id !== facultyUser.id)[0].id, {
+    courseId: evaluationCourse.id,
+    title: 'Unauthorized',
+    sections: [{ title: 'S', questions: [{ text: 'Q', type: 'written' }] }]
+  }).ok === false);
+
+check('an evaluation starts as a draft',
+  !!evalId && Store.get('courseEvaluations', evalId).status === 'draft');
+check('only the creator faculty can publish',
+  !!evalId && Store.publishEvaluation(Store.facultyList().filter((f) => f.id !== facultyUser.id)[0].id, evalId).ok === false);
+const publish = evalId ? Store.publishEvaluation(facultyUser.id, evalId) : { ok: false };
+check('the creator can publish the evaluation', publish.ok);
+check('published evaluations appear only for eligible students',
+  !!evalId && !!eligibleStudent &&
+  Store.evaluationsForStudent(eligibleStudent.id).some((item) => item.evaluation.id === evalId));
+
+const submit = evalId && eligibleStudent ? Store.submitEvaluation(eligibleStudent.id, evalId, {
+  'q-1-1': 5,
+  'q-1-2': 'Excellent',
+  'q-1-3': 'More worked examples would improve practice.',
+  'q-1-4': ['Examples', 'Resources']
+}, '2026-11-19T10:00:00') : { ok: false };
+check('an eligible student can submit a valid response', submit.ok,
+  submit.error || '');
+check('duplicate submission is prevented',
+  !!evalId && eligibleStudent &&
+  Store.submitEvaluation(eligibleStudent.id, evalId, {
+    'q-1-1': 4, 'q-1-2': 'Good', 'q-1-3': '', 'q-1-4': ['Pacing']
+  }, '2026-11-20T10:00:00').ok === false);
+check('deadline validation rejects late submissions',
+  !!evalId && eligibleStudent &&
+  Store.submitEvaluation(eligibleStudent.id, evalId, {
+    'q-1-1': 4, 'q-1-2': 'Good', 'q-1-3': '', 'q-1-4': ['Pacing']
+  }, '2027-01-01T10:00:00').error === 'The submission deadline has passed.');
+
+const analytics = evalId ? Store.evaluationAnalytics(facultyUser.id, evalId) : { ok: false };
+check('creator faculty gets persisted aggregate analytics',
+  analytics.ok && analytics.responseCount === 1 &&
+  analytics.questionStats.some((q) => q.type === 'rating' && q.average === 5));
+check('rating question statistics include percentages',
+  analytics.ok && analytics.questionStats[0].distribution.length === 5 &&
+  analytics.questionStats[0].percentages.length === 5);
+check('written feedback exposes suggestions and improvement areas',
+  analytics.ok && analytics.questionStats[2].suggestions.length === 1 &&
+  analytics.questionStats[2].improvementAreas.length === 1);
+check('a non-creator faculty cannot see analytics',
+  !!evalId && Store.evaluationAnalytics(Store.facultyList().filter((f) => f.id !== facultyUser.id)[0].id, evalId).ok === false);
+check('students cannot access analytics',
+  !!evalId && Store.evaluationAnalytics(eligibleStudent.id, evalId).ok === false);
+const reports = evalId ? Store.evaluationIndividualReports(facultyUser.id, evalId) : { ok: false };
+check('creator faculty can access individual reports',
+  reports.ok && reports.reports.length === 1);
+check('default anonymous reports hide student identity',
+  reports.ok && reports.reports[0].studentId === null &&
+  reports.reports[0].studentName === 'Anonymous student');
+check('non-creator faculty cannot access individual reports',
+  !!evalId && Store.evaluationIndividualReports(Store.facultyList().filter((f) => f.id !== facultyUser.id)[0].id, evalId).ok === false);
+check('admin cannot access individual reports',
+  !!evalId && Store.evaluationIndividualReports(adminUser.id, evalId).ok === false);
+
+check('dashboard semester notice bug has no undefined semesterSet',
+  fs.readFileSync(path.join(ROOT, 'faculty/dashboard.html'), 'utf8').indexOf('var semesterSet = {};') >= 0);
+check('faculty assignment fixtures use facultyIds',
+  /facultyIds\s*:\s*\[\]/.test(fs.readFileSync(path.join(ROOT, 'Additional Files/tests/run-tests.js'), 'utf8')) &&
+  !/\bfacultyId\s*:/m.test(fs.readFileSync(path.join(ROOT, 'Additional Files/tests/run-tests.js'), 'utf8')));
+check('marks recompute guards missing DOM inputs',
+  fs.readFileSync(path.join(ROOT, 'faculty/marks.html'), 'utf8').indexOf('var box = inputFor(studentId,') >= 0 &&
+  fs.readFileSync(path.join(ROOT, 'faculty/marks.html'), 'utf8').indexOf('if (!totalCell) return;') >= 0);
 
 /* ================================================================
    B3. SMALL HELPERS
@@ -685,7 +805,7 @@ let form = courseForm.modals.last();
 check('"New course" opens a form', !!form && form.title === 'New course',
   form ? form.title : 'no dialog');
 check('the form asks for every field a course needs',
-  ['fCode', 'fName', 'fSem', 'fCredits', 'fKind', 'fFac', 'fOpt']
+  ['fCode', 'fName', 'fSem', 'fCredits', 'fKind', 'fOpt', 'fErr']
     .every((id) => form.fields.indexOf(id) >= 0), form.fields.join(','));
 
 /* Each rule is checked by breaking exactly one thing. */

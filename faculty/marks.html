@@ -262,7 +262,8 @@
      would return, so the same arithmetic works for both kinds of column. */
   function recompute(studentId) {
     var cts = [1, 2, 3, 4].map(function (t) {
-      return numOrNull(inputFor(studentId, 'ct' + t).value);
+      var box = inputFor(studentId, 'ct' + t);
+      return box ? numOrNull(box.value) : null;
     }).filter(function (v) { return v !== null; });
     var best3 = cts.slice().sort(function (a, b) { return b - a; }).slice(0, 3);
     var ctScore = best3.length
@@ -270,10 +271,13 @@
       : null;
 
     var att = attScoreFor(studentId, currentCourse().id);
-    var assess = numOrNull(inputFor(studentId, 'assess').value);
-    var fin = numOrNull(inputFor(studentId, 'final').value);
+    var assessBox = inputFor(studentId, 'assess');
+    var finalBox = inputFor(studentId, 'final');
+    var assess = assessBox ? numOrNull(assessBox.value) : null;
+    var fin = finalBox ? numOrNull(finalBox.value) : null;
 
     var totalCell = UI.qs('[data-total="' + studentId + '"]');
+    if (!totalCell) return;
     var hasAny = ctScore !== null || att !== null || assess !== null || fin !== null;
     if (!hasAny) { totalCell.textContent = '—'; return; }
     var total = (ctScore || 0) + (att || 0) + (assess || 0) + (fin || 0);

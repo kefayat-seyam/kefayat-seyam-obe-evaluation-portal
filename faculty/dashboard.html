@@ -162,6 +162,8 @@
      Department notices, notices for a semester I teach, and notices for
      one of my own courses. */
   var myCourseIds = courses.map(function (c) { return c.id; });
+  var semesterSet = {};
+  courses.forEach(function (c) { semesterSet[c.semester] = true; });
   var notices = Store.all('notices').filter(function (n) {
     if (n.level === 'department') return true;
     if (n.level === 'semester') return !!semesterSet[n.semester];

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Course Evaluations</title>
+<script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
+<link rel="icon" href="../shared/img/ruet-logo.png">
+<link rel="stylesheet" href="../shared/css/theme.css">
+<link rel="stylesheet" href="../shared/css/ui.css">
+</head>
+<body>
+<div class="shell"><aside class="sidebar" id="sidebar"></aside><div class="main">
+<header class="topbar" id="topbar"></header><main class="content">
+<div class="page-head"><div><h1>Course Evaluation &amp; Feedback</h1><div class="sub">Build, publish and analyze course-wise feedback</div></div>
+<button class="btn btn-primary" id="btnCreate">+ New evaluation</button></div>
+<div class="card mb-2"><div class="card-head"><h2>My evaluations</h2><span class="small muted" id="evalCount"></span></div>
+<div class="table-wrap"><table class="tbl"><thead><tr><th>Evaluation</th><th>Course</th><th>Status</th><th>Deadline</th><th>Responses</th><th></th></tr></thead><tbody id="evalRows"></tbody></table></div></div>
+<div class="card" id="analyticsCard"><div class="card-head"><h2 id="analyticsTitle">Analytics</h2>
+<div class="row-wrap" style="gap:6px"><button class="btn btn-sm" id="btnCsv">Export CSV</button><button class="btn btn-sm" id="btnPdf">Print / PDF</button></div></div>
+<div class="card-body" id="analyticsBox">Select an evaluation to view analytics.</div></div>
+</main></div></div>
+<script src="../shared/js/seed-courses.js"></script><script src="../shared/js/seed-data.js"></script>
+<script src="../shared/js/store.js"></script><script src="../shared/js/ui.js"></script><script src="../shared/js/theme.js"></script>
+<script src="../shared/js/auth.js"></script><script src="../shared/js/shell.js"></script>
+<script>
+(function(){
+'use strict';
+var me=Auth.requireRole('faculty'); if(!me)return;
+Shell.mount({role:'faculty',active:'evaluations',title:'Course Evaluations'});
+var courses=Store.coursesOfFaculty(me.id).sort(function(a,b){return a.code<b.code?-1:1});
+var selectedId=null;
+var sections=[];
+
+function responses(evaluationId){ var r=Store.evaluationAnalytics(me.id,evaluationId); return r.ok?r.responseCount:0; }
+function draw(){
+ var list=Store.evaluationsOfFaculty(me.id);
+ UI.el('evalCount').textContent=UI.plural(list.length,'evaluation');
+ UI.el('evalRows').innerHTML=list.length?list.map(function(e){
+  var course=Store.get('courses',e.courseId);
+  return '<tr><td class="list-title">'+UI.esc(e.title)+'</td><td>'+UI.esc(course?course.code:'—')+'</td>'+
+   '<td><span class="badge">'+UI.esc(e.status)+'</span></td><td>'+UI.esc(e.deadline?UI.date(e.deadline):'No deadline')+'</td>'+
+   '<td>'+responses(e.id)+'</td><td><div class="actions">'+
+   (e.status==='draft'?'<button class="btn btn-sm btn-primary" data-publish="'+e.id+'">Publish</button>':'')+
+   '<button class="btn btn-sm" data-analysis="'+e.id+'">Analyze</button>'+
+   '<button class="btn btn-sm" data-reports="'+e.id+'">Individual reports</button></div></td></tr>';
+ }).join(''):'<tr><td colspan="6">'+UI.emptyState('📝','No course evaluations yet.')+'</td></tr>';
+ UI.qsa('[data-publish]').forEach(function(b){b.onclick=function(){
+  var r=Store.publishEvaluation(me.id,b.getAttribute('data-publish')); UI.toast(r.ok?'Evaluation published':r.error,r.ok?'info':'error'); if(r.ok)draw();
+ };});
+ UI.qsa('[data-analysis]').forEach(function(b){b.onclick=function(){selectedId=b.getAttribute('data-analysis');drawAnalysis(false);};});
+ UI.qsa('[data-reports]').forEach(function(b){b.onclick=function(){showReports(b.getAttribute('data-reports'));};});
+}
+
+function openCreate(){
+ if(!courses.length){UI.toast('No course is assigned to you','error');return;}
+ sections=[];
+ var options=courses.map(function(c){return '<option value="'+c.id+'">'+UI.esc(c.code+' — '+c.name)+'</option>';}).join('');
+ UI.modal({
+  title:'New course evaluation',wide:true,okText:'Save draft',
+  body:'<div class="field-row"><div class="field"><label for="evCourse">Course</label><select class="select" id="evCourse">'+options+'</select></div>'+
+   '<div class="field" style="flex:0 1 170px"><label for="evDeadline">Deadline</label><input class="input" id="evDeadline" type="date"></div></div>'+
+   '<div class="field"><label for="evTitle">Title</label><input class="input" id="evTitle" placeholder="Mid-semester course feedback"></div>'+
+   '<div class="field"><label for="evDescription">Instructions</label><textarea class="textarea" id="evDescription"></textarea></div>'+
+   '<label class="row-wrap"><input type="checkbox" id="evAnonymous" checked> &nbsp;Anonymous by default</label>'+
+   '<div class="field" id="evSections"></div><div class="error-text" id="evErr"></div>'+
+   '<button class="btn" type="button" id="evAddSection">+ Add section and question</button>',
+  onOk:function(){
+   var result=Store.createEvaluation(me.id,{
+    courseId:UI.el('evCourse').value,title:UI.el('evTitle').value,description:UI.el('evDescription').value,
+    deadline:UI.el('evDeadline').value,anonymous:UI.el('evAnonymous').checked,sections:sections
+   });
+   if(!result.ok){UI.el('evErr').textContent=result.error;return false;}
+   UI.toast('Evaluation saved as draft');draw();
+  }
+ });
+ setTimeout(function(){var b=UI.el('evAddSection');if(b)b.onclick=addSectionAndQuestion;},0);
+}
+
+function addSectionAndQuestion(){
+ var clos=Store.outcomesOf(UI.el('evCourse').value).map(function(c){return '<option value="'+c.id+'">'+UI.esc(c.code)+'</option>';}).join('');
+ UI.modal({
+  title:'Add section and question',wide:true,okText:'Add',
+  body:'<div class="field"><label for="sqSection">Section title</label><input class="input" id="sqSection" placeholder="Teaching quality"></div>'+
+   '<div class="field"><label for="sqText">Question</label><textarea class="textarea" id="sqText"></textarea></div>'+
+   '<div class="field-row"><div class="field"><label for="sqType">Question type</label><select class="select" id="sqType"><option value="rating">Rating 1–5</option><option value="mcq">MCQ</option><option value="checkbox">Checkboxes</option><option value="written">Written feedback</option></select></div>'+
+   '<div class="field"><label for="sqClo">Optional CLO mapping</label><select class="select" id="sqClo"><option value="">No CLO mapping</option>'+clos+'</select></div></div>'+
+   '<div class="field"><label for="sqOptions">MCQ / checkbox options (comma separated)</label><input class="input" id="sqOptions" placeholder="Excellent,Good,Needs improvement"></div>'+
+   '<div class="error-text" id="sqErr"></div>',
+  onOk:function(){
+   var sectionTitle=UI.el('sqSection').value.trim(),text=UI.el('sqText').value.trim();
+   if(!sectionTitle||!text){UI.el('sqErr').textContent='Section title and question are required.';return false;}
+   var type=UI.el('sqType').value,options=type==='mcq'||type==='checkbox'?UI.el('sqOptions').value.split(',').map(function(x){return x.trim();}).filter(Boolean):[];
+   if((type==='mcq'||type==='checkbox')&&options.length<2){UI.el('sqErr').textContent='Add at least two options.';return false;}
+   var clo=UI.el('sqClo').value?[UI.el('sqClo').value]:[];
+   var existing=sections.filter(function(s){return s.title===sectionTitle;})[0];
+   var question={text:text,type:type,options:options,required:true,cloIds:clo};
+   if(existing)existing.questions.push(question);else sections.push({title:sectionTitle,questions:[question]});
+   UI.el('evSections').innerHTML=sections.map(function(s){return '<div class="mt-2"><b>'+UI.esc(s.title)+'</b><br>'+s.questions.map(function(q){return '• '+UI.esc(q.text)+' ('+UI.esc(q.type)+')';}).join('<br>')+'</div>';}).join('');
+  }
+ });
+}
+
+function barRow(label,count,total){
+ var pct=total?Math.round(count*1000/total)/10:0;
+ return '<div class="meter-row"><span>'+UI.esc(label)+'</span><div class="meter-track"><div class="meter-fill" style="width:'+pct+'%"></div></div><b>'+pct+'%</b></div>';
+}
+function drawAnalysis(showOnly){
+ if(!selectedId){UI.toast('Select an evaluation first','error');return;}
+ var r=Store.evaluationAnalytics(me.id,selectedId); if(!r.ok){UI.toast(r.error,'error');return;}
+ UI.el('analyticsTitle').textContent=Store.get('courseEvaluations',selectedId).title+' · '+r.responseCount+' responses';
+ UI.el('analyticsBox').innerHTML=r.questionStats.map(function(s){
+  var html='<div class="card mb-2"><div class="card-head"><h3>'+UI.esc(s.text)+'</h3><span class="small muted">'+UI.esc(s.section)+' · '+UI.esc(s.type)+'</span></div><div class="card-body">';
+  if(s.type==='rating'){
+   html+= '<div class="stat-value">'+(s.average===null?'—':s.average+'/5')+'</div>';
+   s.distribution.forEach(function(n,i){html+=barRow((i+1)+' star',n,s.responseCount);});
+  }else if(s.type==='mcq'||s.type==='checkbox'){
+   s.counts.forEach(function(c){html+=barRow(c.option,c.count,s.type==='mcq'?s.responseCount:Math.max(s.responseCount,1));});
+  }else{
+   html+=s.suggestions.length?'Suggestions / improvement areas:<ul>'+s.suggestions.map(function(t){return '<li>'+UI.esc(t)+'</li>';}).join('')+'</ul>':'<span class="muted">No written responses yet.</span>';
+  }
+  return html+'</div></div>';
+ }).join('')||'<span class="muted">No question results.</span>';
+}
+
+function showReports(evaluationId){
+ var r=Store.evaluationIndividualReports(me.id,evaluationId);if(!r.ok){UI.toast(r.error,'error');return;}
+ UI.modal({wide:true,title:r.anonymous?'Individual reports (identity available to creator)':'Individual reports',
+  body:'<div class="table-wrap"><table class="tbl"><thead><tr><th>Student</th><th>Submitted</th><th>Answers</th></tr></thead><tbody>'+(
+   r.reports.length?r.reports.map(function(x){return '<tr><td>'+UI.esc(x.studentName)+(x.roll?' · '+UI.esc(x.roll):'')+'</td><td>'+UI.esc(UI.date(x.submittedAt))+'</td><td>'+x.answers.map(function(a){var v=Array.isArray(a.value)?a.value.join(', '):String(a.value);return UI.esc(a.questionId+': '+v);}).join('<br>')+'</td></tr>';}).join(''):'<tr><td colspan="3">No submissions.</td></tr>'
+  )+'</tbody></table></div>',hideFooter:true});
+}
+
+UI.el('btnCreate').onclick=openCreate;
+UI.el('btnCsv').onclick=function(){
+ if(!selectedId){UI.toast('Select an evaluation first','error');return;}
+ var r=Store.evaluationAnalytics(me.id,selectedId);if(!r.ok){UI.toast(r.error,'error');return;}
+ var rows=[['Section','Question','Type','Responses','Result']];
+ r.questionStats.forEach(function(s){var result=s.average!==undefined?(s.average===null?'':String(s.average)):s.counts?s.counts.map(function(c){return c.option+'='+c.percentage+'%';}).join('; '):s.suggestions.join(' | ');rows.push([s.section,s.text,s.type,s.responseCount,result]);});
+ var csv=rows.map(function(row){return row.map(function(v){return '\"'+String(v||'').replace(/\"/g,'\"\"')+'\"';}).join(',');}).join('\n');
+ var blob=new Blob([csv],{type:'text/csv'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='evaluation-'+selectedId+'.csv';a.click();URL.revokeObjectURL(url);
+};
+UI.el('btnPdf').onclick=function(){window.print();};
+draw();
+})();
+</script>
+</body></html>

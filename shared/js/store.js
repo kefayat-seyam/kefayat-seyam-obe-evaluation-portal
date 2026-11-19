@@ -115,7 +115,10 @@ window.Store = (function () {
       attendance: [],        // one row per student / course / date
       /* --- Visit 4 collections (question-wise CO/PO, like the RUET workbook) --- */
       questions: [],         // one row per question of a CT or final paper
-      questionMarks: []      // what one student scored on one question
+      questionMarks: [],     // what one student scored on one question
+      /* --- Course Evaluation & Feedback Portal --- */
+      courseEvaluations: [], // evaluation builders created by faculty
+      evaluationResponses: [] // submitted student answers
     };
     var deptId = db.department.id;
 
@@ -414,7 +417,8 @@ window.Store = (function () {
         users: 'usr', series: 'srs',
         seriesSemesters: 'sem', assignments: 'asg',
         ctMarks: 'ct', assessMarks: 'asm', finalMarks: 'fin', attendance: 'att',
-        questions: 'qn', questionMarks: 'qm'
+        questions: 'qn', questionMarks: 'qm',
+        courseEvaluations: 'ev', evaluationResponses: 'er'
       }[name] || 'rec';
     },
 
@@ -1241,6 +1245,202 @@ window.Store = (function () {
       return { ok: true };
     },
 
+    /* --- course evaluation & feedback --- */
+
+    evaluationsOfFaculty: function (facultyId) {
+      return api.where('courseEvaluations', function (e) {
+        return e.creatorFacultyId === facultyId;
+      }).sort(function (a, b) { return (b.createdAt || '').localeCompare(a.createdAt || ''); });
+    },
+
+    createEvaluation: function (facultyId, input) {
+      load();
+      var faculty = api.get('users', facultyId);
+      var course = api.get('courses', input && input.courseId);
+      if (!faculty || faculty.role !== 'faculty') return { ok: false, error: 'Faculty authorization required.' };
+      if (!course || (course.facultyIds || []).indexOf(facultyId) < 0) {
+        return { ok: false, error: 'You can only evaluate a course assigned to you.' };
+      }
+      var title = String(input.title || '').trim();
+      if (!title) return { ok: false, error: 'Evaluation title is required.' };
+      var sections = (input.sections || []).map(function (section, si) {
+        var questions = (section.questions || []).map(function (q, qi) {
+          var type = ['rating', 'mcq', 'checkbox', 'written'].indexOf(q.type) >= 0 ? q.type : 'written';
+          var options = (q.options || []).map(function (o) { return String(o).trim(); }).filter(Boolean);
+          if ((type === 'mcq' || type === 'checkbox') && options.length < 2) {
+            return null;
+          }
+          return {
+            id: 'q-' + (si + 1) + '-' + (qi + 1),
+            text: String(q.text || '').trim(),
+            type: type,
+            options: options,
+            required: q.required !== false,
+            cloIds: (q.cloIds || []).filter(function (id) { return !!api.get('courseOutcomes', id); })
+          };
+        }).filter(function (q) { return q && !!q.text; });
+        return { id: 'sec-' + (si + 1), title: String(section.title || '').trim(), questions: questions };
+      }).filter(function (s) { return s.title && s.questions.length; });
+      if (!sections.length) return { ok: false, error: 'Add at least one section and question.' };
+      var record = api.add('courseEvaluations', {
+        courseId: course.id,
+        creatorFacultyId: facultyId,
+        title: title,
+        description: String(input.description || '').trim(),
+        deadline: input.deadline ? String(input.deadline).slice(0, 10) : null,
+        anonymous: input.anonymous !== false,
+        status: 'draft',
+        sections: sections,
+        createdAt: new Date().toISOString(),
+        publishedAt: null
+      });
+      return { ok: true, evaluation: record };
+    },
+
+    publishEvaluation: function (facultyId, evaluationId) {
+      var evaluation = api.get('courseEvaluations', evaluationId);
+      if (!evaluation) return { ok: false, error: 'Evaluation not found.' };
+      if (evaluation.creatorFacultyId !== facultyId) return { ok: false, error: 'Only the creator teacher can publish this evaluation.' };
+      var updated = api.update('courseEvaluations', evaluationId, {
+        status: 'published',
+        publishedAt: new Date().toISOString()
+      });
+      return { ok: true, evaluation: updated };
+    },
+
+    evaluationsForStudent: function (studentId) {
+      var student = api.get('users', studentId);
+      if (!student || student.role !== 'student') return [];
+      return api.where('courseEvaluations', function (evaluation) {
+        if (evaluation.status !== 'published') return false;
+        var course = api.get('courses', evaluation.courseId);
+        if (!course || course.semester !== student.semester || course.optional) return false;
+        var deadline = evaluation.deadline ? new Date(evaluation.deadline + 'T23:59:59').getTime() : null;
+        if (deadline !== null && Date.now() > deadline) return false;
+        return true;
+      }).map(function (evaluation) {
+        var submitted = api.where('evaluationResponses', function (r) {
+          return r.evaluationId === evaluation.id && r.studentId === studentId;
+        }).length > 0;
+        return copy({ evaluation: evaluation, submitted: submitted });
+      });
+    },
+
+    submitEvaluation: function (studentId, evaluationId, answers, now) {
+      var student = api.get('users', studentId);
+      var evaluation = api.get('courseEvaluations', evaluationId);
+      if (!student || student.role !== 'student') return { ok: false, error: 'Student authorization required.' };
+      if (!evaluation || evaluation.status !== 'published') return { ok: false, error: 'Evaluation is not available.' };
+      var course = api.get('courses', evaluation.courseId);
+      if (!course || course.semester !== student.semester || course.optional) {
+        return { ok: false, error: 'You are not eligible for this evaluation.' };
+      }
+      if (evaluation.deadline) {
+        var deadline = new Date(evaluation.deadline + 'T23:59:59').getTime();
+        var current = now ? new Date(now).getTime() : Date.now();
+        if (current > deadline) return { ok: false, error: 'The submission deadline has passed.' };
+      }
+      var duplicate = api.where('evaluationResponses', function (r) {
+        return r.evaluationId === evaluationId && r.studentId === studentId;
+      }).length;
+      if (duplicate) return { ok: false, error: 'You have already submitted this evaluation.' };
+
+      var cleanAnswers = [];
+      var questions = [];
+      (evaluation.sections || []).forEach(function (section) { questions = questions.concat(section.questions || []); });
+      for (var i = 0; i < questions.length; i += 1) {
+        var question = questions[i];
+        var answer = (answers && answers[question.id]);
+        if (question.required) {
+          var empty = answer === undefined || answer === null || answer === '' ||
+            (Array.isArray(answer) && !answer.length);
+          if (empty) return { ok: false, error: 'Please answer: ' + question.text };
+        }
+        if (question.type === 'rating') {
+          var rating = Number(answer);
+          if (answer !== undefined && answer !== '' && (rating < 1 || rating > 5)) {
+            return { ok: false, error: 'Ratings must be from 1 to 5.' };
+          }
+          answer = rating || null;
+        } else if (question.type === 'written') {
+          answer = String(answer || '').trim().slice(0, 5000);
+        } else if (Array.isArray(answer)) {
+          answer = answer.filter(function (v) { return question.options.indexOf(String(v)) >= 0; }).map(String);
+        } else if (answer !== undefined && answer !== null) {
+          answer = String(answer);
+          if (question.options.indexOf(answer) < 0) return { ok: false, error: 'Invalid option selected.' };
+        }
+        cleanAnswers.push({ questionId: question.id, value: answer });
+      }
+      var response = api.add('evaluationResponses', {
+        evaluationId: evaluationId,
+        studentId: studentId,
+        submittedAt: now ? new Date(now).toISOString() : new Date().toISOString(),
+        answers: cleanAnswers
+      });
+      return { ok: true, response: response };
+    },
+
+    evaluationAnalytics: function (facultyId, evaluationId) {
+      var evaluation = api.get('courseEvaluations', evaluationId);
+      if (!evaluation) return { ok: false, error: 'Evaluation not found.' };
+      if (evaluation.creatorFacultyId !== facultyId) return { ok: false, error: 'Only the creator teacher can view this analysis.' };
+      var responses = api.where('evaluationResponses', function (r) { return r.evaluationId === evaluationId; });
+      var questionStats = [];
+      (evaluation.sections || []).forEach(function (section) {
+        (section.questions || []).forEach(function (question) {
+          var values = responses.map(function (response) {
+            var answer = response.answers.filter(function (a) { return a.questionId === question.id; })[0];
+            return answer ? answer.value : null;
+          }).filter(function (value) { return value !== null && value !== undefined && value !== ''; });
+          var stat = { questionId: question.id, section: section.title, text: question.text, type: question.type, responseCount: values.length };
+          if (question.type === 'rating') {
+            var sum = 0;
+            var distribution = [0, 0, 0, 0, 0];
+            values.forEach(function (value) { var n = Number(value); if (n >= 1 && n <= 5) { sum += n; distribution[n - 1] += 1; } });
+            stat.average = values.length ? Math.round((sum / values.length) * 100) / 100 : null;
+            stat.distribution = distribution;
+            stat.percentages = distribution.map(function (n) { return values.length ? Math.round(n * 1000 / values.length) / 10 : 0; });
+          } else if (question.type === 'mcq') {
+            stat.counts = question.options.map(function (option) {
+              var count = values.filter(function (value) { return value === option; }).length;
+              return { option: option, count: count, percentage: values.length ? Math.round(count * 1000 / values.length) / 10 : 0 };
+            });
+          } else if (question.type === 'checkbox') {
+            stat.counts = question.options.map(function (option) {
+              var count = values.filter(function (value) { return Array.isArray(value) && value.indexOf(option) >= 0; }).length;
+              return { option: option, count: count, percentage: values.length ? Math.round(count * 1000 / values.length) / 10 : 0 };
+            });
+          } else {
+            stat.writtenAnswers = values.map(function (value) { return String(value); });
+            stat.suggestions = stat.writtenAnswers.slice(0, 20);
+            stat.improvementAreas = stat.writtenAnswers.filter(function (value) {
+              return /improv|better|suggest|need|should|problem|difficulty/i.test(value);
+            }).slice(0, 20);
+          }
+          questionStats.push(stat);
+        });
+      });
+      return { ok: true, evaluation: evaluation, responseCount: responses.length, questionStats: questionStats };
+    },
+
+    evaluationIndividualReports: function (facultyId, evaluationId) {
+      var evaluation = api.get('courseEvaluations', evaluationId);
+      if (!evaluation) return { ok: false, error: 'Evaluation not found.' };
+      if (evaluation.creatorFacultyId !== facultyId) return { ok: false, error: 'Only the creator teacher can view individual reports.' };
+      var reports = api.where('evaluationResponses', function (r) { return r.evaluationId === evaluationId; }).map(function (response) {
+        var student = api.get('users', response.studentId);
+        return {
+          studentId: evaluation.anonymous ? null : response.studentId,
+          studentName: evaluation.anonymous ? 'Anonymous student' : (student ? (student.name || student.roll || 'Student') : 'Student'),
+          roll: evaluation.anonymous ? '' : (student ? (student.roll || '') : ''),
+          submittedAt: response.submittedAt,
+          answers: copy(response.answers)
+        };
+      });
+      return { ok: true, anonymous: evaluation.anonymous, reports: reports };
+    },
+
     /* --- housekeeping --- */
 
     /** Throw away every change and load the seed data again. */
@@ -1276,6 +1476,8 @@ window.Store = (function () {
       db.attendance = [];
       db.questions = [];
       db.questionMarks = [];
+      db.courseEvaluations = [];
+      db.evaluationResponses = [];
       db.meta.startedFreshAt = new Date().toISOString();
       save();
       return true;
