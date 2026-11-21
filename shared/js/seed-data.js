@@ -95,14 +95,19 @@ window.OBE_SEED = {
      they hold no courses this session.
      --------------------------------------------------------------- */
   users: [
-    /* --- Admin = Department Head (one per department) --- */
+    /* --- Admin account = department administration (separate from teaching) --- */
     {
       id: 'u-admin', role: 'admin', departmentId: 'dept-ece',
-      name: 'Prof. Dr. Md. Anwar Hossain', email: 'head.ece@ruet.ac.bd', password: 'admin123',
-      designation: 'Professor & Head of the Department'
+      name: 'Department Administrator', email: 'head.ece@ruet.ac.bd', password: 'admin123',
+      designation: 'Administrator'
     },
 
     /* --- Faculty: Assistant Professors --- */
+    {
+      id: 'u-fac-head', role: 'faculty', departmentId: 'dept-ece',
+      name: 'Prof. Dr. Md. Anwar Hossain', email: 'anwarhossain@ece.ruet.ac.bd', password: 'faculty123',
+      designation: 'Professor', courseCodes: ['ECE 1101', 'ECE 1102']
+    },
     {
       id: 'u-fac-1', role: 'faculty', departmentId: 'dept-ece',
       name: 'Fariya Tabassum', email: 'fariya@ece.ruet.ac.bd', password: 'faculty123',

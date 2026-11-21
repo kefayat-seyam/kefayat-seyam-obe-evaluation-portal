@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CO / PO Framework</title>
+<title>CO and PO Framework</title>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
 <link rel="icon" href="../shared/img/ruet-logo.png">
 <link rel="stylesheet" href="../shared/css/theme.css">
@@ -19,7 +19,7 @@
 
       <div class="page-head">
         <div>
-          <h1>CO / PO Framework</h1>
+          <h1>CO and PO Framework</h1>
           <div class="sub">Program outcomes belong to the department; course outcomes belong to a course.</div>
         </div>
         <div class="row-wrap" id="headBtns"></div>
@@ -138,7 +138,7 @@
   var me = Auth.requireRole('admin');
   if (!me) return;
 
-  Shell.mount({ role: 'admin', active: 'copo', title: 'CO / PO Framework' });
+  Shell.mount({ role: 'admin', active: 'copo', title: 'CO and PO Framework' });
 
   var dept = Store.department();
   var semesters = Store.semesters();

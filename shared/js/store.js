@@ -1274,9 +1274,8 @@ window.Store = (function () {
             id: 'q-' + (si + 1) + '-' + (qi + 1),
             text: String(q.text || '').trim(),
             type: type,
-            options: options,
-            required: q.required !== false,
-            cloIds: (q.cloIds || []).filter(function (id) { return !!api.get('courseOutcomes', id); })
+            options: type === 'rating' ? ['Poor', 'Fair', 'Satisfactory', 'Very good', 'Excellent'] : options,
+            required: q.required !== false
           };
         }).filter(function (q) { return q && !!q.text; });
         return { id: 'sec-' + (si + 1), title: String(section.title || '').trim(), questions: questions };

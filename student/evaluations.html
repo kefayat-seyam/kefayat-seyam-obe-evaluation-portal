@@ -38,7 +38,15 @@ function submitEvaluationForm(evaluationId){
   (section.questions||[]).forEach(function(q){
    var id='answer-'+q.id;
    html+='<div class="field"><label for="'+id+'">'+UI.esc(q.text)+(q.required?' *':'')+'</label>';
-   if(q.type==='rating')html+='<select class="select" id="'+id+'"><option value="">Choose 1–5</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select>';
+   if(q.type==='rating'){
+    var labels=['Poor','Fair','Satisfactory','Very good','Excellent'];
+     html+='<input type="hidden" id="'+id+'" value="">';
+    html+='<div class="eval-radio-scale" role="radiogroup" aria-label="'+UI.esc(q.text)+'">';
+    labels.forEach(function(label,i){
+      html+='<label class="eval-radio-option"><input type="radio" name="'+id+'-radio" value="'+(i+1)+'" onchange="document.getElementById(\''+id+'\').value=this.value"><span>'+UI.esc(label)+'</span></label>';
+    });
+    html+='</div>';
+   }
    else if(q.type==='mcq')html+='<select class="select" id="'+id+'"><option value="">Choose an option</option>'+q.options.map(function(o){return '<option value="'+UI.esc(o)+'">'+UI.esc(o)+'</option>';}).join('')+'</select>';
    else if(q.type==='checkbox')html+='<div>'+q.options.map(function(o,i){return '<label style="display:block;margin:6px 0"><input type="checkbox" name="'+id+'" value="'+UI.esc(o)+'"> '+UI.esc(o)+'</label>';}).join('')+'</div>';
    else html+='<textarea class="textarea" id="'+id+'" maxlength="5000"></textarea>';

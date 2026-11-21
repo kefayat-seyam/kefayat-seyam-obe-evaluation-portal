@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Series / Semester</title>
+<title>Series</title>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('obe.theme')||'light'}catch(e){}</script>
 <link rel="icon" href="../shared/img/ruet-logo.png">
 <link rel="stylesheet" href="../shared/css/theme.css">
@@ -19,7 +19,7 @@
 
       <div class="page-head">
         <div>
-          <h1>Series / Semester</h1>
+          <h1>Series</h1>
           <div class="sub">A series is an admission batch; each series plans its courses semester by semester.</div>
         </div>
         <button class="btn btn-primary" id="btnAddSeries">+ New series</button>
@@ -80,7 +80,7 @@
 
   var me = Auth.requireRole('admin');
   if (!me) return;
-  Shell.mount({ role: 'admin', active: 'series', title: 'Series / Semester' });
+  Shell.mount({ role: 'admin', active: 'series', title: 'Series' });
 
   var dept = Store.department();
   var semesters = Store.semesters();

@@ -408,6 +408,9 @@ group('B. Course evaluation and feedback');
 
 const facultyCourses = Store.coursesOfFaculty(facultyUser.id);
 const evaluationCourse = facultyCourses[0];
+const unauthorizedFaculty = Store.facultyList().filter((f) =>
+  f.id !== facultyUser.id &&
+  !Store.coursesOfFaculty(f.id).some((course) => course.id === evaluationCourse.id))[0];
 let eligibleStudent = Store.studentList().filter((s) =>
   evaluationCourse && s.semester === evaluationCourse.semester)[0];
 if (evaluationCourse && !eligibleStudent) {
@@ -430,7 +433,6 @@ check('the seed has a faculty course and eligible student for evaluation tests',
   !!evaluationCourse && !!eligibleStudent,
   evaluationCourse ? evaluationCourse.code : 'no faculty course');
 
-const evaluationCLO = Store.outcomesOf(evaluationCourse.id)[0];
 const createdEvaluation = Store.createEvaluation(facultyUser.id, {
   courseId: evaluationCourse.id,
   title: 'Harness course feedback',
@@ -440,18 +442,22 @@ const createdEvaluation = Store.createEvaluation(facultyUser.id, {
   sections: [{
     title: 'Teaching',
     questions: [
-      { text: 'Teaching quality', type: 'rating', required: true, cloIds: evaluationCLO ? [evaluationCLO.id] : [] },
+      { text: 'Teaching quality', type: 'rating', required: true },
       { text: 'Overall delivery', type: 'mcq', required: true, options: ['Excellent', 'Good', 'Needs improvement'] },
-      { text: 'Suggestions', type: 'written', required: false, cloIds: [] },
+      { text: 'Suggestions', type: 'written', required: false },
       { text: 'Priority improvements', type: 'checkbox', required: true, options: ['Examples', 'Pacing', 'Resources'] }
     ]
   }]
 });
 check('a creator faculty can build and persist an evaluation',
   createdEvaluation.ok && !!Store.get('courseEvaluations', createdEvaluation.evaluation.id));
+check('course evaluations do not persist CLO mappings',
+  createdEvaluation.ok && (createdEvaluation.evaluation.sections || []).every((section) =>
+    (section.questions || []).every((question) => !Object.prototype.hasOwnProperty.call(question, 'cloIds'))));
 const evalId = createdEvaluation.evaluation ? createdEvaluation.evaluation.id : null;
 check('course assignments restrict evaluation creation',
-  Store.createEvaluation(Store.facultyList().filter((f) => f.id !== facultyUser.id)[0].id, {
+  !!unauthorizedFaculty &&
+  Store.createEvaluation(unauthorizedFaculty.id, {
     courseId: evaluationCourse.id,
     title: 'Unauthorized',
     sections: [{ title: 'S', questions: [{ text: 'Q', type: 'written' }] }]
@@ -510,6 +516,35 @@ check('non-creator faculty cannot access individual reports',
   !!evalId && Store.evaluationIndividualReports(Store.facultyList().filter((f) => f.id !== facultyUser.id)[0].id, evalId).ok === false);
 check('admin cannot access individual reports',
   !!evalId && Store.evaluationIndividualReports(adminUser.id, evalId).ok === false);
+
+const studentEvaluationHtml = fs.readFileSync(path.join(ROOT, 'student/evaluations.html'), 'utf8');
+const facultyEvaluationHtml = fs.readFileSync(path.join(ROOT, 'faculty/evaluations.html'), 'utf8');
+check('student rating questions render as radio choices',
+  studentEvaluationHtml.indexOf('type="radio"') >= 0 &&
+  ['Poor', 'Fair', 'Satisfactory', 'Very good', 'Excellent'].every((label) =>
+    studentEvaluationHtml.indexOf(label) >= 0));
+check('faculty setup offers course selection without CLO coupling',
+  facultyEvaluationHtml.indexOf('id="evCourse"') >= 0 &&
+  facultyEvaluationHtml.indexOf('sqClo') < 0 &&
+  facultyEvaluationHtml.indexOf('Optional CLO mapping') < 0);
+check('faculty setup exposes radio ratings and written suggestions',
+  facultyEvaluationHtml.indexOf('Radio rating') >= 0 &&
+  facultyEvaluationHtml.indexOf('Written feedback') >= 0);
+
+const shellHtml = fs.readFileSync(path.join(ROOT, 'shared/js/shell.js'), 'utf8');
+const seedHtml = fs.readFileSync(path.join(ROOT, 'shared/js/seed-data.js'), 'utf8');
+check('admin identity is separate from professor identity',
+  seedHtml.indexOf("name: 'Department Administrator'") >= 0 &&
+  seedHtml.indexOf("id: 'u-fac-head', role: 'faculty'") >= 0 &&
+  seedHtml.indexOf("name: 'Prof. Dr. Md. Anwar Hossain'") >= 0);
+check('admin shell uses a neutral identity',
+  shellHtml.indexOf("opts.role === 'admin' ? 'Department Administrator'") >= 0 &&
+  shellHtml.indexOf('Prof. Dr. Md. Anwar Hossain') < 0);
+check('navigation uses Series and CO and PO Framework labels',
+  shellHtml.indexOf("label: 'Series'") >= 0 &&
+  shellHtml.indexOf("label: 'CO and PO Framework'") >= 0 &&
+  shellHtml.indexOf("label: 'Series / Semester'") < 0 &&
+  shellHtml.indexOf("label: 'CO / PO Framework'") < 0);
 
 check('dashboard semester notice bug has no undefined semesterSet',
   fs.readFileSync(path.join(ROOT, 'faculty/dashboard.html'), 'utf8').indexOf('var semesterSet = {};') >= 0);

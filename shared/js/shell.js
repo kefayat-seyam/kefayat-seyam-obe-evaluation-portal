@@ -64,12 +64,12 @@ window.Shell = (function () {
       { id: 'dashboard', label: 'Dashboard',        href: 'dashboard.html',    icon: 'grid' },
       { group: 'Curriculum' },
       { id: 'courses',   label: 'Course Management', href: 'courses.html',     icon: 'book' },
-      { id: 'copo',      label: 'CO / PO Framework', href: 'co-po.html',       icon: 'target' },
+      { id: 'copo',      label: 'CO and PO Framework', href: 'co-po.html',       icon: 'target' },
       { group: 'Department' },
       { id: 'faculty',   label: 'Faculty Info',      href: 'faculty-info.html', icon: 'users' },
       { id: 'external',  label: 'External Faculty',  href: 'external-faculty.html', icon: 'globe' },
       { id: 'students',  label: 'Student Rolls',     href: 'students-info.html', icon: 'cap' },
-      { id: 'series',    label: 'Series / Semester', href: 'series.html',       icon: 'calendar' },
+      { id: 'series',    label: 'Series', href: 'series.html',       icon: 'calendar' },
       { id: 'notices',   label: 'Notices',           href: 'notices.html',      icon: 'bell' }
     ],
 
@@ -148,6 +148,8 @@ window.Shell = (function () {
       '</nav>';
 
     /* ---- topbar ---- */
+    var topbarName = opts.role === 'admin' ? 'Department Administrator' : user.name;
+    var topbarInitials = opts.role === 'admin' ? 'DA' : UI.initials(user.name);
     UI.el('topbar').innerHTML =
       '<div>' +
         '<div class="topbar-title">' + UI.esc(opts.title || 'Dashboard') + '</div>' +
@@ -156,9 +158,9 @@ window.Shell = (function () {
       '<div class="spacer"></div>' +
       '<button class="icon-btn" data-theme-toggle title="Switch theme">☾</button>' +
       '<div class="who">' +
-        '<div class="avatar">' + UI.esc(UI.initials(user.name)) + '</div>' +
+        '<div class="avatar">' + UI.esc(topbarInitials) + '</div>' +
         '<div>' +
-          '<div class="who-name">' + UI.esc(user.name) + '</div>' +
+          '<div class="who-name">' + UI.esc(topbarName) + '</div>' +
           '<div class="who-role">' + UI.esc(roleInfo.label) +
             (user.roll ? ' · ' + UI.esc(user.roll) : '') + '</div>' +
         '</div>' +

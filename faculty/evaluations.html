@@ -77,23 +77,20 @@ function openCreate(){
 }
 
 function addSectionAndQuestion(){
- var clos=Store.outcomesOf(UI.el('evCourse').value).map(function(c){return '<option value="'+c.id+'">'+UI.esc(c.code)+'</option>';}).join('');
  UI.modal({
   title:'Add section and question',wide:true,okText:'Add',
   body:'<div class="field"><label for="sqSection">Section title</label><input class="input" id="sqSection" placeholder="Teaching quality"></div>'+
    '<div class="field"><label for="sqText">Question</label><textarea class="textarea" id="sqText"></textarea></div>'+
-   '<div class="field-row"><div class="field"><label for="sqType">Question type</label><select class="select" id="sqType"><option value="rating">Rating 1–5</option><option value="mcq">MCQ</option><option value="checkbox">Checkboxes</option><option value="written">Written feedback</option></select></div>'+
-   '<div class="field"><label for="sqClo">Optional CLO mapping</label><select class="select" id="sqClo"><option value="">No CLO mapping</option>'+clos+'</select></div></div>'+
-   '<div class="field"><label for="sqOptions">MCQ / checkbox options (comma separated)</label><input class="input" id="sqOptions" placeholder="Excellent,Good,Needs improvement"></div>'+
+   '<div class="field"><label for="sqType">Question type</label><select class="select" id="sqType"><option value="rating">Radio rating — Poor to Excellent</option><option value="written">Written feedback / suggestions</option></select></div>'+
+   '<div class="small muted">Student ratings use: Poor, Fair, Satisfactory, Very good, Excellent.</div>'+
    '<div class="error-text" id="sqErr"></div>',
   onOk:function(){
    var sectionTitle=UI.el('sqSection').value.trim(),text=UI.el('sqText').value.trim();
    if(!sectionTitle||!text){UI.el('sqErr').textContent='Section title and question are required.';return false;}
-   var type=UI.el('sqType').value,options=type==='mcq'||type==='checkbox'?UI.el('sqOptions').value.split(',').map(function(x){return x.trim();}).filter(Boolean):[];
-   if((type==='mcq'||type==='checkbox')&&options.length<2){UI.el('sqErr').textContent='Add at least two options.';return false;}
-   var clo=UI.el('sqClo').value?[UI.el('sqClo').value]:[];
+   var type=UI.el('sqType').value;
+   var options=type==='rating'?['Poor','Fair','Satisfactory','Very good','Excellent']:[];
    var existing=sections.filter(function(s){return s.title===sectionTitle;})[0];
-   var question={text:text,type:type,options:options,required:true,cloIds:clo};
+   var question={text:text,type:type,options:options,required:type==='rating'};
    if(existing)existing.questions.push(question);else sections.push({title:sectionTitle,questions:[question]});
    UI.el('evSections').innerHTML=sections.map(function(s){return '<div class="mt-2"><b>'+UI.esc(s.title)+'</b><br>'+s.questions.map(function(q){return '• '+UI.esc(q.text)+' ('+UI.esc(q.type)+')';}).join('<br>')+'</div>';}).join('');
   }
@@ -112,7 +109,7 @@ function drawAnalysis(showOnly){
   var html='<div class="card mb-2"><div class="card-head"><h3>'+UI.esc(s.text)+'</h3><span class="small muted">'+UI.esc(s.section)+' · '+UI.esc(s.type)+'</span></div><div class="card-body">';
   if(s.type==='rating'){
    html+= '<div class="stat-value">'+(s.average===null?'—':s.average+'/5')+'</div>';
-   s.distribution.forEach(function(n,i){html+=barRow((i+1)+' star',n,s.responseCount);});
+   ['Poor','Fair','Satisfactory','Very good','Excellent'].forEach(function(label,i){html+=barRow(label,s.distribution[i],s.responseCount);});
   }else if(s.type==='mcq'||s.type==='checkbox'){
    s.counts.forEach(function(c){html+=barRow(c.option,c.count,s.type==='mcq'?s.responseCount:Math.max(s.responseCount,1));});
   }else{
